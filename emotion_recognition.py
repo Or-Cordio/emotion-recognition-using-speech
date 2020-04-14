@@ -6,7 +6,7 @@ from sklearn.metrics import accuracy_score, make_scorer, fbeta_score, mean_squar
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import GridSearchCV
 
-import matplotlib.pyplot as pl
+import matplotlib as pl #import matplotlib.pyplot as pl
 from time import time
 from utils import get_best_estimators, get_audio_config
 import numpy as np

@@ -1,11 +1,9 @@
 librosa==0.6.3
-numpy
-pandas
-soundfile==0.9.0
-wave
-sklearn
+numpy==1.18.1
+pandas==1.0.3
 tqdm==4.28.1
 matplotlib==2.2.3
 pyaudio==0.2.11
 keras==2.2.4
-tensorflow==1.15.2
+tensorflow==1.13.1
+scikit-learn==0.22.2.post1
