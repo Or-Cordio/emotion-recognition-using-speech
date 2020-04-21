@@ -276,4 +276,6 @@ class CordioESP_ToolBox:
                     save_url_path = "results_tablesOfProb\\"+str(len(emotion_list))+"emotionsTraining\\"+patient_id+"\\"+model
                     Path(save_url_path).mkdir(parents=True, exist_ok=True)
                     save_file_name = 'MeanSessionsProbability'+'_trainedWith'+str(len(emotion_list))+'Classes'+'_'+patient_id+'_'+model+'_'+emotion
-                    fig.savefig(save_url_path+"\\"+save_file_name+".csv")
+                    manager = plt.get_current_fig_manager()
+                    manager.window.showMaximized()
+                    fig.savefig(save_url_path+"\\"+save_file_name+".png")
