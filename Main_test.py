@@ -46,11 +46,11 @@ patient_prob_tables_urls = ["D:\\work\\code\\Python\\ESP\\noPaperProject\\result
 session_hour_range = 1
 setup_name = "9emotions_7models_first_setup"
 
-ESP_TB.patient_plotNsave_mean_prob_session_emotion_3d(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
-
 ESP_TB.patient_plotNsave_emotion_over_time_summerize_for_model_one_plot(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
 
-ESP_TB.patient_plotNsave_emotion_over_time_summerize_for_model_subplots(patient_prob_tables_urls, model_list, emotions_list, session_hour_range,setup_name)
+ESP_TB.patient_plotNsave_mean_prob_session_emotion_3d(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
+
+ESP_TB.patient_plotNsave_emotion_over_time_summerize_for_model_subplots(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
 
 ESP_TB.patient_plotNsave_count_hard_decision_histogram(patient_prob_tables_urls, model_list, emotions_list, session_hour_range,setup_name)
 

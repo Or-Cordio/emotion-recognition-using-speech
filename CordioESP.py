@@ -462,15 +462,16 @@ class CordioESP_ToolBox:
                 for date in model_graphs_mean_by_date_df.index.values:
                     model_graphs_mean_by_date_df['IsWet'][date] = (
                                 model_graphs_df['ClinicalStatus'][model_graphs_df['Date'] == date] == 'wet').any()
-
-                model_graphs_mean_by_date_df_only_emotions = model_graphs_mean_by_date_df[emotion_list]
+                emotion_list_with_clinical_status = emotion_list.copy()
+                emotion_list_with_clinical_status.append('IsWet')
+                model_graphs_mean_by_date_df_only_emotions = model_graphs_mean_by_date_df[emotion_list_with_clinical_status]
+                model_graphs_mean_by_date_df_only_emotions['IsWet'] = model_graphs_mean_by_date_df_only_emotions['IsWet']*model_graphs_mean_by_date_df[emotion_list].values.max()
+                model_graphs_mean_by_date_df_only_emotions = model_graphs_mean_by_date_df_only_emotions.astype(float)
                 model_graphs_mean_by_date_df_only_emotions = model_graphs_mean_by_date_df_only_emotions.transpose()
+
                 # plot
-                x_labels = np.datetime_as_string(model_graphs_mean_by_date_df_only_emotions.columns.values, unit='D')
                 fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=False, figsize=(20, 10), dpi=200,
-                                       facecolor='w',
-                                       edgecolor='k')
-                # ax = sn.heatmap(model_graphs_mean_by_date_df_only_emotions, annot=False, xticklabels=x_labels)
+                                       facecolor='w', edgecolor='k')
                 ax = sn.heatmap(model_graphs_mean_by_date_df_only_emotions, annot=False)
                 ax.xaxis.set_major_locator(plt.MaxNLocator(30))  # reducing number of plot ticks
                 plt.setp(ax.xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
@@ -488,7 +489,7 @@ class CordioESP_ToolBox:
                 #         ax.get_xticklabels()[i].set_color("aqua")
                 # ax.fill_between(model_graphs_mean_by_date_df_only_emotions.columns.values, 0, 1, where=model_graphs_mean_by_date_df['IsWet'],
                 #                 color='aqua', alpha=0.9, transform=ax.get_xaxis_transform())
-                ax.yaxis.set_major_locator(plt.MaxNLocator(len(emotion_list)))
+                ax.yaxis.set_major_locator(plt.MaxNLocator(len(emotion_list_with_clinical_status)))
 
                 fig.suptitle('Mean Date Probability\n' + 'trained with ' + str(len(
                     emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
@@ -560,14 +561,15 @@ class CordioESP_ToolBox:
                     emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
                 plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
                 ax.set_ylabel('Mean Date Probability')
-            # save fig:
-            save_url_path = "results_tablesOfProb\\"+setup_name+"\\"+patient_id+"\\"+model
-            Path(save_url_path).mkdir(parents=True, exist_ok=True)
-            save_file_name = 'MeanSessionsProbabilityAllEmotionsInOneGraph'+'_trainedWith'+str(len(emotion_list))+'Classes'+'_'+patient_id+'_'+model
-            # manager = plt.get_current_fig_manager()
-            # manager.window.showMaximized()
-            if os.path.isfile(save_url_path+"\\"+save_file_name+".png"):
-                os.remove(save_url_path+"\\"+save_file_name+".png")
-            plt.ioff()
-            fig.savefig(save_url_path+"\\"+save_file_name+".png", bbox_inches='tight')
-            plt.close(fig)
+
+                # save fig:
+                save_url_path = "results_tablesOfProb\\"+setup_name+"\\"+patient_id+"\\"+model
+                Path(save_url_path).mkdir(parents=True, exist_ok=True)
+                save_file_name = 'MeanSessionsProbabilityAllEmotionsInOneGraph'+'_trainedWith'+str(len(emotion_list))+'Classes'+'_'+patient_id+'_'+model
+                # manager = plt.get_current_fig_manager()
+                # manager.window.showMaximized()
+                if os.path.isfile(save_url_path+"\\"+save_file_name+".png"):
+                    os.remove(save_url_path+"\\"+save_file_name+".png")
+                plt.ioff()
+                fig.savefig(save_url_path+"\\"+save_file_name+".png", bbox_inches='tight')
+                plt.close(fig)
