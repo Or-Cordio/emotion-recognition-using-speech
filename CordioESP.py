@@ -40,7 +40,19 @@ from sklearn.neural_network import MLPClassifier
 # p = "D:\work\db\BSV\BSV-0006\BSV-0006_190520_094113_S0010_he_1.25_SM-J400F_Android26.wav"
 
 class CordioESP_ToolBox:
-    ''' Expressive Speech Processing '''
+    """
+    Expressive Speech Processing
+    TODO: add class description
+
+       Cordio Medical - Confidential
+         Version: 0.1    2020-04-27
+
+         Revision History:
+         |   Ver    | Author    | Date           | Change Description
+         |----------|-----------|----------------|--------------------
+         |   0.1    | Or        | 2020-04-27     | Initial
+         |   x.x    | xxxx      | xxxx-xx-xx     | x
+     """
 
     def __init__(self):
         self.suported_emotions = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom']
@@ -511,6 +523,87 @@ class CordioESP_ToolBox:
 
     def patient_plotNsave_emotion_over_time_summerize_for_model_one_plot(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
         # TODO: add documentation
+        for patient_prob_table_url in patient_prob_tables_urls:
+            # loading data if available:
+            try:
+                prob_table = pd.read_csv(patient_prob_table_url)
+            except:
+                print("File not avalble in: "+patient_prob_table_url)
+            # fix numbers loaded as str:
+            for emotion in emotion_list:
+                if(type(prob_table[emotion][0]) == str):
+                    prob_table[emotion] = prob_table[emotion].apply(pd.to_numeric, errors='coerce')
+            patient_id = prob_table["PatientName"].iloc[0]
+            # ensure data in the right format:
+            if (model_list == []) or (type(model_list[0]) != str):
+                model_list = prob_table.Model.unique()
+                print("using all available models")
+            # remove unsupported models:
+            model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
+            emotion_list = [val for idx, val in enumerate(self.suported_emotions) if val in emotion_list]
+            # add IsWet column:
+
+
+            for model in model_list:
+                model_graphs_df = prob_table[prob_table['Model'] == model] # filter by emotion
+                fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=False,  figsize=(20, 10), dpi=200, facecolor='w',
+                                       edgecolor='k')
+                for emotion in emotion_list:
+                    model_graphs_df['Date'] = pd.to_datetime(model_graphs_df['Date'], format="%d/%m/%Y")
+                    model_graphs_mean_by_date_df = model_graphs_df.resample('d', on='Date').mean().dropna(how='all')
+                    # add IsWet to model_graphs_mean_by_date_df
+                    model_graphs_mean_by_date_df['IsWet'] = ""
+                    for date in model_graphs_mean_by_date_df.index.values:
+                        model_graphs_mean_by_date_df['IsWet'][date] = (model_graphs_df['ClinicalStatus'][model_graphs_df['Date']==date]=='wet').any()
+                    # plot:
+                    x = model_graphs_mean_by_date_df.index.values
+                    y = model_graphs_mean_by_date_df[emotion]
+                    ax.plot(x, y, linestyle='--', marker='o', label=emotion)
+
+                    ax.fill_between(x, 0, 1, where=model_graphs_mean_by_date_df['IsWet'],
+                                    color='aqua', alpha=0.4, transform=ax.get_xaxis_transform())# plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+                    ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+                    ax.xaxis.set_major_locator(plt.MaxNLocator(30))     # reducing number of plot ticks
+                    plt.setp(ax.xaxis.get_majorticklabels(), rotation=30)   # rotate plot tics
+
+                    # plt.ylabel(emotion+' mean session probability')
+                ax.grid()
+                fig.legend(loc='best')
+                fig.suptitle('Mean Sessions Probability\n' + 'trained with ' + str(len(
+                    emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
+                plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+                ax.set_ylabel('Mean Date Probability')
+
+                # save fig:
+                save_url_path = "results_tablesOfProb\\"+setup_name+"\\"+patient_id+"\\"+model
+                Path(save_url_path).mkdir(parents=True, exist_ok=True)
+                save_file_name = 'MeanSessionsProbabilityAllEmotionsInOneGraph'+'_trainedWith'+str(len(emotion_list))+'Classes'+'_'+patient_id+'_'+model
+                # manager = plt.get_current_fig_manager()
+                # manager.window.showMaximized()
+                if os.path.isfile(save_url_path+"\\"+save_file_name+".png"):
+                    os.remove(save_url_path+"\\"+save_file_name+".png")
+                plt.ioff()
+                fig.savefig(save_url_path+"\\"+save_file_name+".png", bbox_inches='tight')
+                plt.close(fig)
+
+    def get_model_variance_per_patient(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
+        """
+        Description:
+            the function gets number of patients, models and emotion classes. the function calculate the mean varience for
+            each session and plot this value over time(date).
+
+        Input:
+            :parm patient_prob_tables_urls: list of urls to each patiant .wav files
+            :type patient_prob_tables_urls:
+            :parm model_list: list of scikit learn models. should be set to output probabilities
+            :type model_list:
+            :parm emotion_list: list of emotion classes
+            :type emotion_list:
+            :param setup_name: string that describes the current setup under which the models where trained by
+            :type setup_name:
+        """
+        # TODO: complete documentation
+        # TODO: finish function
         for patient_prob_table_url in patient_prob_tables_urls:
             # loading data if available:
             try:
