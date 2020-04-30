@@ -46,6 +46,14 @@ patient_prob_tables_urls = ["D:\\work\\code\\Python\\ESP\\noPaperProject\\result
 session_hour_range = 1
 setup_name = "9emotions_7models_first_setup"
 
+ESP_TB.get_model_variance_per_patient_all_models_multiple_graph(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
+
+ESP_TB.get_model_variance_per_patient_all_models_multiple_graph(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
+
+ESP_TB.get_model_variance_per_patient_all_models(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
+
+ESP_TB.get_model_variance_per_patientNmodel_heatmap(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
+
 ESP_TB.patient_plotNsave_emotion_over_time_summerize_for_model_one_plot(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
 
 ESP_TB.patient_plotNsave_mean_prob_session_emotion_3d(patient_prob_tables_urls, model_list, emotions_list, session_hour_range, setup_name)
@@ -58,12 +66,10 @@ ESP_TB.patient_plotNsave_sum_histogram(patient_prob_tables_urls, model_list, emo
 
 ESP_TB.patient_plotNsave_emotion_over_time(patient_prob_tables_urls, [], emotions_list, session_hour_range, setup_name)
 
-# for patient_prob_table in patient_prob_tables:
-#     prob_df = pd.read_csv(patient_prob_table)
-#     graphs_df = ESP_TB.plot_emotion_over_time(patient_prob_table, 1)
-#     ESP_TB.patient_plotNsave_emotion_over_time(patient_prob_tables_urls, model_list, emotion_list)
-
-
+for patient_prob_table in patient_prob_tables:
+    prob_df = pd.read_csv(patient_prob_table)
+    graphs_df = ESP_TB.get_table_by_session(patient_prob_table, 1)
+    ESP_TB.patient_plotNsave_emotion_over_time(patient_prob_tables_urls, model_list, emotions_list)
 
 # progress bar initialization:
 widgets = [FormatLabel('<<<all patient process>>>'), ' ', Percentage(), ' ', Bar('#'), ' ', RotatingMarker()]
@@ -74,9 +80,7 @@ for i, patientDir_path in zip(range(len(patientDir_paths)), patientDir_paths):
     widgets[0] = FormatLabel('<filename-{0}>'.format(i))
     progressbar.update(i)
 
-    table = ESP_TB.predict_all_proba_for_patient(ESP_TB, patientDir_path, clinicalInformation, fileHandle, model_list,
-                                                 emotions_list)
-
+    table = ESP_TB.predict_all_proba_for_patient(patientDir_path, clinicalInformation, fileHandle, model_list, emotions_list)
     # save patient table:
     emo_naum = len(emotions_list)
     model_num = len(model_list)
@@ -87,3 +91,4 @@ for i, patientDir_path in zip(range(len(patientDir_paths)), patientDir_paths):
     table.to_csv('results_tablesOfProb\\tablesOfProb_' + patient_ID + '_' + str(emo_naum) + 'classes_' + str(
         model_num) + 'models.csv')
 progressbar.finish()
+

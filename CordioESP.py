@@ -14,6 +14,7 @@ from pylab import *
 import numpy as np
 from collections import Counter
 import seaborn as sn
+from progressbar import *
 import matplotlib.dates as mdates
 
 from sklearn.svm import SVC
@@ -42,7 +43,8 @@ from sklearn.neural_network import MLPClassifier
 class CordioESP_ToolBox:
     """
     Expressive Speech Processing
-    TODO: add class description
+
+    # TODO: add class description
 
        Cordio Medical - Confidential
          Version: 0.1    2020-04-27
@@ -88,7 +90,7 @@ class CordioESP_ToolBox:
         patientNmodel_df = pd.DataFrame(index=np.arange(df_len),
                                         columns=patient_info_column_names + ['Model'] + emotions_list)
 
-        rec = self.modelTrain(self, model, emotions_list)
+        rec = self.modelTrain(model, emotions_list)
 
         # progress bar initialization:
         p = Path(str(all_wavs[0]))
@@ -107,7 +109,7 @@ class CordioESP_ToolBox:
             progressbar.update(i)
 
             # add  soft decision score for each emotion
-            patientNmodel_df.loc[i] = self.modelPredict(self, rec, wav)
+            patientNmodel_df.loc[i] = self.modelPredict(rec, wav)
 
             # insert basic information:
             p = Path(str(wav))
@@ -120,22 +122,12 @@ class CordioESP_ToolBox:
             # TODO: add App version, Device identifier and OS version columns
 
             # setting clinical status:
-            clinicalStatus = self.get_clinical_info(self, clinicalInformation, fileHandle.CordioExtractRecordingDateTime(p),
+            clinicalStatus = self.get_clinical_info(clinicalInformation, fileHandle.CordioExtractRecordingDateTime(p),
                                                patientNmodel_df.at[i, "PatientName"])
-            # clinicalInfo = clinicalInformation(patientNmodel_df.at[i, "PatientName"], '')
-            # clinicalStatusCode = clinicalInfo(fileHandle.CordioExtractRecordingDateTime(p))
-            # clinicalStatus = "dry"
-            # if clinicalStatusCode == -1:
-            #     # recording is not valid (before patient registration)
-            #     clinicalStatus = 'recording is not valid (before patient registration)'
-            # elif clinicalStatusCode == clinicalInfo.CLINICAL_STATUS_UNKNOWN:
-            #     clinicalStatus = "unknown"
-            # elif clinicalStatusCode == clinicalInfo.CLINICAL_STATUS_WET:
-            #     clinicalStatus = "wet"
-            # patientNmodel_df.at[i, "ClinicalStatus"] = clinicalStatus
 
             # setting model:
             patientNmodel_df.at[i, "Model"] = type(model).__name__
+
         progressbar.finish()
 
         return patientNmodel_df
@@ -165,7 +157,7 @@ class CordioESP_ToolBox:
             widgets[0] = FormatLabel('<filename-{0}>'.format(i))
             progressbar.update(i)
 
-            tmp = self.predict_all_proba_for_patientNmodel(self, model, fileHandle, clinicalInformation,
+            tmp = self.predict_all_proba_for_patientNmodel(model, fileHandle, clinicalInformation,
                                                            patient_info_column_names, emotions_list, all_wavs)
             patient_df = patient_df.append(tmp)
         progressbar.finish()
@@ -186,7 +178,26 @@ class CordioESP_ToolBox:
 
         return clinicalStatus
 
-    def plot_emotion_over_time(self, prob_table, session_hour_range):
+    def SaveFig(self, fig, save_url_path, save_file_name, add_datetime, close_fig):
+        # from pathlib import Path
+        # create folders in path if not exist:
+        Path(save_url_path).mkdir(parents=True, exist_ok=True)
+        # remove old file with the same name if exist:
+        if os.path.isfile(save_url_path + "\\" + save_file_name + ".png"):
+            os.remove(save_url_path + "\\" + save_file_name + ".png")
+        plt.ioff()
+        # save file:
+        # datetime object containing current date and time
+        now = dt.now()
+        if (add_datetime == []) or (add_datetime == True):
+            dt_string = now.strftime("%d%m%y_%H%M%S")
+            fig.savefig(save_url_path + "\\" + save_file_name + dt_string + ".png", bbox_inches='tight')
+        else:
+            fig.savefig(save_url_path + "\\" + save_file_name + ".png", bbox_inches='tight')
+        if close_fig:
+            plt.close(fig)
+
+    def get_table_by_session(self, prob_table, session_hour_range, session_action):
 
         # TODO: add description
 
@@ -226,7 +237,9 @@ class CordioESP_ToolBox:
                 while curr_time_idx <= last_dateNmodel_idx:
                     session_mask = (prob_table_dateNmodel_sub_df['Time'] >= curr_time) & (prob_table_dateNmodel_sub_df['Time'] < curr_time + datetime.timedelta(hours=session_hour_range))
                     prob_table_dateNmodel_seassion_sub_df = prob_table_dateNmodel_sub_df[session_mask]
-                    mean_prob_row = prob_table_dateNmodel_seassion_sub_df.mean(axis=0, numeric_only=True, skipna=True)
+                    # mean_prob_row = prob_table_dateNmodel_seassion_sub_df.mean(axis=0, numeric_only=True, skipna=True)
+                    # mean_prob_row = getattr(prob_table_dateNmodel_seassion_sub_df.mean(axis=0, numeric_only=True, skipna=True).modules[__name__], str)
+                    mean_prob_row = getattr(prob_table_dateNmodel_seassion_sub_df, session_action)(axis=0, numeric_only=True, skipna=True)
 
                     basic_info_dict = {'Patient_id': [prob_table_dateNmodel_seassion_sub_df.iloc[0]['PatientName']],
                                        'SessionIdx': [session_idx],
@@ -251,7 +264,10 @@ class CordioESP_ToolBox:
 
         return graphs_df
 
-    def patient_plotNsave_emotion_over_time(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range,setup_name):
+    # plot and save methods:
+    # ---------------------
+
+    def patient_plotNsave_emotion_over_time(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
         # TODO: add documentation
         for patient_prob_table_url in patient_prob_tables_urls:
             # loading data if available:
@@ -269,13 +285,13 @@ class CordioESP_ToolBox:
             if (session_hour_range == []) or (type(session_hour_range) != int):
                 session_hour_range = 1
                 print("set session_hour_range to default value of 1 hour")
-            graph_df = self.plot_emotion_over_time(prob_table, session_hour_range)
+            graph_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean')
 
             patient_id = graph_df["Patient_id"].iloc[0]
             # ensure data in the right format:
             if (model_list == []) or (type(model_list[0]) != str):
                 model_list = graph_df.Model.unique()
-                print("using all available models")
+                # sys.warning("using all available models")
 
 
             # remove unsupported models:
@@ -330,13 +346,13 @@ class CordioESP_ToolBox:
             if (session_hour_range == []) or (type(session_hour_range) != int):
                 session_hour_range = 1
                 print("set session_hour_range to default value of 1 hour")
-            graph_df = self.plot_emotion_over_time(prob_table, session_hour_range)
+            graph_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean')
 
             patient_id = graph_df["Patient_id"].iloc[0]
             # ensure data in the right format:
             if (model_list == []) or (type(model_list[0]) != str):
                 model_list = graph_df.Model.unique()
-                print("using all available models")
+                # print("using all available models")
 
             # remove unsupported models:
             model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
@@ -391,13 +407,13 @@ class CordioESP_ToolBox:
             if (session_hour_range == []) or (type(session_hour_range) != int):
                 session_hour_range = 1
                 print("set session_hour_range to default value of 1 hour")
-            graph_df = self.plot_emotion_over_time(prob_table, session_hour_range)
+            graph_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean')
 
             patient_id = graph_df["Patient_id"].iloc[0]
             # ensure data in the right format:
             if (model_list == []) or (type(model_list[0]) != str):
                 model_list = graph_df.Model.unique()
-                print("using all available models")
+                # print("using all available models")
 
             # remove unsupported models:
             model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
@@ -458,7 +474,7 @@ class CordioESP_ToolBox:
             # ensure data in the right format:
             if (model_list == []) or (type(model_list[0]) != str):
                 model_list = prob_table.Model.unique()
-                print("using all available models")
+                # print("using all available models")
 
 
             # remove unsupported models:
@@ -537,7 +553,7 @@ class CordioESP_ToolBox:
             # ensure data in the right format:
             if (model_list == []) or (type(model_list[0]) != str):
                 model_list = prob_table.Model.unique()
-                print("using all available models")
+                # print("using all available models")
             # remove unsupported models:
             model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
             emotion_list = [val for idx, val in enumerate(self.suported_emotions) if val in emotion_list]
@@ -586,11 +602,126 @@ class CordioESP_ToolBox:
                 fig.savefig(save_url_path+"\\"+save_file_name+".png", bbox_inches='tight')
                 plt.close(fig)
 
-    def get_model_variance_per_patient(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
+    # def get_model_variance_per_patient_notGood(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name, multi_graph):
+    #     """
+    #     Description: the function gets number of patients, models and emotion classes. the function calculate the
+    #     mean variance for each session and plot this value over time(date).
+    #
+    #     Input:
+    #         :parm patient_prob_tables_urls: list of urls to each patiant .wav files
+    #         :type patient_prob_tables_urls:
+    #         :parm model_list: list of scikit learn models. should be set to output probabilities
+    #         :type model_list:
+    #         :parm emotion_list: list of emotion classes
+    #         :type emotion_list:
+    #         :param setup_name: string that describes the current setup under which the models where trained by
+    #         :type setup_name:
+    #     """
+    #     # TODO: complete documentation
+    #     # TODO: finish function
+    #     for patient_prob_table_url in patient_prob_tables_urls:
+    #         # loading data if available:
+    #         try:
+    #             prob_table = pd.read_csv(patient_prob_table_url)
+    #         except:
+    #             print("File not avalble in: "+patient_prob_table_url)
+    #         # fix numbers loaded as str:
+    #         for emotion in emotion_list:
+    #             if(type(prob_table[emotion][0]) == str):
+    #                 prob_table[emotion] = prob_table[emotion].apply(pd.to_numeric, errors='coerce')
+    #         patient_id = prob_table["PatientName"].iloc[0]
+    #         # ensure data in the right format:
+    #         if (model_list == []) or (type(model_list[0]) != str):
+    #             model_list = prob_table.Model.unique()
+    #             print("using all available models")
+    #         # remove unsupported models:
+    #         model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
+    #         emotion_list = [val for idx, val in enumerate(self.suported_emotions) if val in emotion_list]
+    #         # add IsWet column:
+    #
+    #         # get graph_df:
+    #         if (session_hour_range == []) or (type(session_hour_range) != int):
+    #             session_hour_range = 1
+    #             print("set session_hour_range to default value of 1 hour")
+    #         prob_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean')
+    #
+    #         for model in model_list:
+    #             prob_table_by_sessionNmodel_df = prob_table_by_session_df[prob_table_by_session_df['Model'] == model] # filter by model
+    #             prob_table_by_sessionNmodel_df['std'] = prob_table_by_sessionNmodel_df.std(axis=1, numeric_only=True, skipna=True)
+    #             fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=False,  figsize=(20, 10), dpi=200, facecolor='w',
+    #                                    edgecolor='k')
+    #             prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
+    #             x = prob_table_by_sessionNmodel_df['Date']
+    #             y = prob_table_by_sessionNmodel_df['std']
+    #             ax.plot(x, y, linestyle='--', marker='o', label=emotion)
+    #             ax.fill_between(x, 0, 1, where=prob_table_by_sessionNmodel_df['IsWet'],
+    #                             color='aqua', alpha=0.4,
+    #                             transform=ax.get_xaxis_transform())  # plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+    #             ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+    #             ax.xaxis.set_major_locator(plt.MaxNLocator(30))  # reducing number of plot ticks
+    #             plt.setp(ax.xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
+    #             ax.grid()
+    #             fig.suptitle('Mean Sessions STD Over All Emotions\Classes\n' + 'trained with ' + str(len(
+    #                 emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
+    #             plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+    #             ax.set_ylabel('Mean Sessions STD')
+    #
+    #
+    #         # sublot implamentation:
+    #         number_of_subplots = len(model_list)
+    #         subplots_columns = 4
+    #         number_of_rows = number_of_subplots // subplots_columns
+    #         number_of_rows += (number_of_subplots % subplots_columns)>0
+    #         Position = range(1, number_of_subplots + 1)
+    #
+    #         Position = range(1, number_of_subplots + 1)
+    #         # fig = plt.figure(figsize=(20, 10), dpi=200, facecolor='w', edgecolor='k')
+    #         # fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.4)
+    #         fig, ax= plt.subplots(nrows=number_of_rows, ncols=subplots_columns, sharex=True, sharey=False, figsize=(20, 10), dpi=200, facecolor='w',
+    #                      edgecolor='k')
+    #         model_idx=0
+    #         for row in range(number_of_rows):
+    #             for col in range(subplots_columns):
+    #                 if model_idx > len(model_list)-1:
+    #                     break
+    #                 model = model_list[model_idx]
+    #                 prob_table_by_sessionNmodel_df = prob_table_by_session_df[
+    #                     prob_table_by_session_df['Model'] == model]  # filter by model
+    #                 prob_table_by_sessionNmodel_df['std'] = prob_table_by_sessionNmodel_df.std(axis=1,
+    #                                                                                            numeric_only=True,
+    #                                                                                            skipna=True)
+    #
+    #                 prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
+    #                 x = prob_table_by_sessionNmodel_df['Date']
+    #                 y = prob_table_by_sessionNmodel_df['std']
+    #                 ax[row, col].plot(x, y, linestyle='--', marker='o', label=emotion)
+    #                 ax[row, col].fill_between(x, 0, 1, where=prob_table_by_sessionNmodel_df['IsWet'],
+    #                                 color='aqua', alpha=0.4,
+    #                                 transform=ax[row, col].get_xaxis_transform())  # plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+    #                 ax[row, col].yaxis.set_major_locator(plt.MaxNLocator(4))
+    #                 ax[row, col].xaxis.set_major_locator(plt.MaxNLocator(20))  # reducing number of plot ticks
+    #                 plt.setp(ax[row, col].xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
+    #                 ax[row, col].grid()
+    #                 plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+    #                 ax[row, col].set_ylabel('Mean Sessions STD')
+    #                 ax[row, col].title.set_text('Mean Sessions STD Over All Emotions\Classes\n' + 'trained with ' + str(len(
+    #                     emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
+    #
+    #                 model_idx = model_idx + 1
+    #         fig.tight_layout(pad=4.0)
+    #
+    #
+    #             # save fig:
+    #             save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_id + "\\" + model
+    #             save_file_name = 'MeanSessionsSTDOverAllEmotions' + '_trainedWith' + str(
+    #                 len(emotion_list)) + 'Classes' + '_' + patient_id + '_' + model
+    #             self.SaveFig(fig, save_url_path, save_file_name, add_datetime=False, close_fig=True)
+
+
+    def get_model_variance_per_patientNmodel_heatmap(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
         """
-        Description:
-            the function gets number of patients, models and emotion classes. the function calculate the mean varience for
-            each session and plot this value over time(date).
+        Description: the function gets number of patients, models and emotion classes. the function calculate the
+        mean variance for each session and plot this value over time(date).
 
         Input:
             :parm patient_prob_tables_urls: list of urls to each patiant .wav files
@@ -609,60 +740,202 @@ class CordioESP_ToolBox:
             try:
                 prob_table = pd.read_csv(patient_prob_table_url)
             except:
-                print("File not avalble in: "+patient_prob_table_url)
+                print("File not avalble in: " + patient_prob_table_url)
             # fix numbers loaded as str:
             for emotion in emotion_list:
-                if(type(prob_table[emotion][0]) == str):
+                if (type(prob_table[emotion][0]) == str):
                     prob_table[emotion] = prob_table[emotion].apply(pd.to_numeric, errors='coerce')
             patient_id = prob_table["PatientName"].iloc[0]
             # ensure data in the right format:
             if (model_list == []) or (type(model_list[0]) != str):
                 model_list = prob_table.Model.unique()
-                print("using all available models")
+                # print("using all available models")
             # remove unsupported models:
             model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
             emotion_list = [val for idx, val in enumerate(self.suported_emotions) if val in emotion_list]
             # add IsWet column:
 
+            # get graph_df:
+            if (session_hour_range == []) or (type(session_hour_range) != int):
+                session_hour_range = 1
+                print("set session_hour_range to default value of 1 hour")
+            prob_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='std')
 
             for model in model_list:
-                model_graphs_df = prob_table[prob_table['Model'] == model] # filter by emotion
-                fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=False,  figsize=(20, 10), dpi=200, facecolor='w',
-                                       edgecolor='k')
-                for emotion in emotion_list:
-                    model_graphs_df['Date'] = pd.to_datetime(model_graphs_df['Date'], format="%d/%m/%Y")
-                    model_graphs_mean_by_date_df = model_graphs_df.resample('d', on='Date').mean().dropna(how='all')
-                    # add IsWet to model_graphs_mean_by_date_df
-                    model_graphs_mean_by_date_df['IsWet'] = ""
-                    for date in model_graphs_mean_by_date_df.index.values:
-                        model_graphs_mean_by_date_df['IsWet'][date] = (model_graphs_df['ClinicalStatus'][model_graphs_df['Date']==date]=='wet').any()
-                    # plot:
-                    x = model_graphs_mean_by_date_df.index.values
-                    y = model_graphs_mean_by_date_df[emotion]
-                    ax.plot(x, y, linestyle='--', marker='o', label=emotion)
+                # cut model graph:
+                prob_table_by_sessionNmodel_df = prob_table_by_session_df[prob_table_by_session_df['Model']==model]
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
+                prob_table_by_sessionNmodel_df['Date'] = pd.to_datetime(prob_table_by_sessionNmodel_df['Date'], format="%d/%m/%Y")
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.set_index('Date')
+                emotion_list_with_clinical_status = emotion_list.copy()
+                emotion_list_with_clinical_status.append('IsWet')
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df[emotion_list_with_clinical_status]
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.astype(float)
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.transpose()
 
-                    ax.fill_between(x, 0, 1, where=model_graphs_mean_by_date_df['IsWet'],
-                                    color='aqua', alpha=0.4, transform=ax.get_xaxis_transform())# plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
-                    ax.yaxis.set_major_locator(plt.MaxNLocator(4))
-                    ax.xaxis.set_major_locator(plt.MaxNLocator(30))     # reducing number of plot ticks
-                    plt.setp(ax.xaxis.get_majorticklabels(), rotation=30)   # rotate plot tics
+                # plot
+                fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=False, figsize=(20, 10), dpi=200,
+                                       facecolor='w', edgecolor='k')
+                ax = sn.heatmap(prob_table_by_sessionNmodel_df, annot=False)
+                ax.xaxis.set_major_locator(plt.MaxNLocator(30))  # reducing number of plot ticks
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
+                # rewrite x labels text:
+                labels = [item.get_text() for item in ax.get_xticklabels()]
+                for i in range(len(labels)):
+                    labels[i] = labels[i][0:10]
+                ax.set_xticklabels(labels)
+                # color set wet index
+                # TODO: color set wet index
+                # for i, date in zip(range(len(ax.get_xticklabels())), ax.get_xticklabels()):
+                #     # date_dt =
+                #     if model_graphs_mean_by_date_df['IsWet'][date]:
+                #         print(ax.get_xticklabels()[i])
+                #         ax.get_xticklabels()[i].set_color("aqua")
+                # ax.fill_between(model_graphs_mean_by_date_df_only_emotions.columns.values, 0, 1, where=model_graphs_mean_by_date_df['IsWet'],
+                #                 color='aqua', alpha=0.9, transform=ax.get_xaxis_transform())
+                ax.yaxis.set_major_locator(plt.MaxNLocator(len(emotion_list_with_clinical_status)))
 
-                    # plt.ylabel(emotion+' mean session probability')
-                ax.grid()
-                fig.legend(loc='best')
-                fig.suptitle('Mean Sessions Probability\n' + 'trained with ' + str(len(
+                fig.suptitle('Session STD per Emotion\Class\n' + 'trained with ' + str(len(
                     emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
                 plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
-                ax.set_ylabel('Mean Date Probability')
+                ax.set_ylabel('STD per Emotion')
 
                 # save fig:
-                save_url_path = "results_tablesOfProb\\"+setup_name+"\\"+patient_id+"\\"+model
-                Path(save_url_path).mkdir(parents=True, exist_ok=True)
-                save_file_name = 'MeanSessionsProbabilityAllEmotionsInOneGraph'+'_trainedWith'+str(len(emotion_list))+'Classes'+'_'+patient_id+'_'+model
-                # manager = plt.get_current_fig_manager()
-                # manager.window.showMaximized()
-                if os.path.isfile(save_url_path+"\\"+save_file_name+".png"):
-                    os.remove(save_url_path+"\\"+save_file_name+".png")
-                plt.ioff()
-                fig.savefig(save_url_path+"\\"+save_file_name+".png", bbox_inches='tight')
-                plt.close(fig)
+                save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_id + "\\" + model
+                save_file_name = 'MeanSessionsStdOverAllEmotionsHeatMap' + '_trainedWith' + str(
+                    len(emotion_list)) + 'Classes' + '_' + patient_id + '_' + model
+                self.SaveFig(fig, save_url_path, save_file_name, add_datetime=False, close_fig=True)
+
+    def get_model_variance_per_patient_all_models_one_graph(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
+        for patient_prob_table_url in patient_prob_tables_urls:
+            # loading data if available:
+            try:
+                prob_table = pd.read_csv(patient_prob_table_url)
+            except:
+                print("File not avalble in: " + patient_prob_table_url)
+            # fix numbers loaded as str:
+            for emotion in emotion_list:
+                if (type(prob_table[emotion][0]) == str):
+                    prob_table[emotion] = prob_table[emotion].apply(pd.to_numeric, errors='coerce')
+            patient_id = prob_table["PatientName"].iloc[0]
+            # ensure data in the right format:
+            if (model_list == []) or (type(model_list[0]) != str):
+                model_list = prob_table.Model.unique()
+                # print("using all available models")
+            # remove unsupported models:
+            model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
+            emotion_list = [val for idx, val in enumerate(self.suported_emotions) if val in emotion_list]
+            # add IsWet column:
+
+            # get graph_df:
+            if (session_hour_range == []) or (type(session_hour_range) != int):
+                session_hour_range = 1
+                print("set session_hour_range to default value of 1 hour")
+            prob_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='std')
+
+            fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=False, figsize=(20, 10), dpi=200,
+                                   facecolor='w', edgecolor='k')
+
+            for model in model_list:
+                # cut model graph:
+                prob_table_by_sessionNmodel_df = prob_table_by_session_df[prob_table_by_session_df['Model'] == model]
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
+                prob_table_by_sessionNmodel_df['Date'] = pd.to_datetime(prob_table_by_sessionNmodel_df['Date'],
+                                                                        format="%d/%m/%Y")
+
+                #mean of std's over all emotions:
+                prob_table_by_sessionNmodel_df['MeanStd'] = prob_table_by_sessionNmodel_df.std(axis=1, numeric_only=True, skipna=True)
+
+                x = prob_table_by_sessionNmodel_df['Date']
+                y = prob_table_by_sessionNmodel_df['MeanStd']
+                ax.plot(x, y, linestyle='--', marker='o', label=model)
+                ax.fill_between(x, 0, 1, where=prob_table_by_sessionNmodel_df['IsWet'],
+                                color='aqua', alpha=0.4,
+                                transform=ax.get_xaxis_transform())  # plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+                ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+                ax.xaxis.set_major_locator(plt.MaxNLocator(30))  # reducing number of plot ticks
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
+                ax.grid()
+                fig.suptitle('Mean Sessions STD Over All Emotions\Classes\n' + 'trained with ' + str(len(
+                    emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
+                plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+                ax.set_ylabel('Mean Sessions STD')
+            fig.legend()
+
+            # save fig:
+            save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_id
+            save_file_name = 'MeanSessionsStdOverAllEmotionsAllModels' + '_trainedWith' + str(
+                len(emotion_list)) + 'Classes' + '_' + patient_id + '_' + model
+            self.SaveFig(fig, save_url_path, save_file_name, add_datetime=False, close_fig=True)
+
+    def get_model_variance_per_patient_all_models_multiple_graph(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
+        # progress bar initialization:
+        widgets = [FormatLabel('<<<all patient process>>>'), ' ', Percentage(), ' ', Bar('#'), ' ', RotatingMarker()]
+        progressbar = ProgressBar(widgets=widgets, maxval=len(patient_prob_tables_urls))
+        progressbar.start()
+        for i_pb, patient_prob_table_url in zip(range(len(patient_prob_tables_urls)), patient_prob_tables_urls):
+            # progress bar update:
+            widgets[0] = FormatLabel('<filename-{0}>'.format(i_pb))
+            progressbar.update(i_pb)
+
+            # loading data if available:
+            try:
+                prob_table = pd.read_csv(patient_prob_table_url)
+            except:
+                print("File not avalble in: " + patient_prob_table_url)
+            # fix numbers loaded as str:
+            for emotion in emotion_list:
+                if (type(prob_table[emotion][0]) == str):
+                    prob_table[emotion] = prob_table[emotion].apply(pd.to_numeric, errors='coerce')
+            patient_id = prob_table["PatientName"].iloc[0]
+            # ensure data in the right format:
+            if (model_list == []) or (type(model_list[0]) != str):
+                model_list = prob_table.Model.unique()
+                # print("using all available models")
+            # remove unsupported models:
+            model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
+            emotion_list = [val for idx, val in enumerate(self.suported_emotions) if val in emotion_list]
+            # add IsWet column:
+
+            # get graph_df:
+            if (session_hour_range == []) or (type(session_hour_range) != int):
+                session_hour_range = 1
+                print("set session_hour_range to default value of 1 hour")
+            prob_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='std')
+
+            fig, ax = plt.subplots(nrows=len(model_list), ncols=1, sharex=True, sharey=False, figsize=(20, 10), dpi=200,
+                                   facecolor='w', edgecolor='k')
+
+            for model, i in zip(model_list, range(len(model_list))):
+                # cut model graph:
+                prob_table_by_sessionNmodel_df = prob_table_by_session_df[prob_table_by_session_df['Model'] == model]
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
+                prob_table_by_sessionNmodel_df['Date'] = pd.to_datetime(prob_table_by_sessionNmodel_df['Date'],
+                                                                        format="%d/%m/%Y")
+
+                # mean of std's over all emotions:
+                prob_table_by_sessionNmodel_df['MeanStd'] = prob_table_by_sessionNmodel_df.std(axis=1,
+                                                                                               numeric_only=True,
+                                                                                               skipna=True)
+
+                x = prob_table_by_sessionNmodel_df['Date']
+                y = prob_table_by_sessionNmodel_df['MeanStd']
+                ax[i].plot(x, y, linestyle='--', marker='x', label=model)
+                ax[i].fill_between(x, 0, 1, where=prob_table_by_sessionNmodel_df['IsWet'],
+                                color='aqua', alpha=0.4,
+                                transform=ax[i].get_xaxis_transform())  # plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+                ax[i].yaxis.set_major_locator(plt.MaxNLocator(4))
+                ax[i].xaxis.set_major_locator(plt.MaxNLocator(30))  # reducing number of plot ticks
+                plt.setp(ax[i].xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
+                ax[i].grid()
+                fig.suptitle('Mean Sessions STD Over All Emotions\Classes\n' + 'trained with ' + str(len(
+                    emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
+                plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+                ax[i].set_ylabel(model, rotation=83, color='royalblue')
+            subplots_adjust(hspace=0.000)
+            # save fig:
+            save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_id
+            save_file_name = 'MeanSessionsStdOverAllEmotionsAllModelsMultipleGraph' + '_trainedWith' + str(
+                len(emotion_list)) + 'Classes' + '_' + patient_id + '_' + model
+            self.SaveFig(fig, save_url_path, save_file_name, add_datetime=False, close_fig=True)
+        progressbar.finish()
