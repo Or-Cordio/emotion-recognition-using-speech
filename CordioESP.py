@@ -197,7 +197,24 @@ class CordioESP_ToolBox:
         if close_fig:
             plt.close(fig)
 
-    def get_table_by_session(self, prob_table, session_hour_range, session_action):
+    def SaveTable(self, table, save_url_path, save_file_name, add_datetime):
+        # from pathlib import Path
+        # create folders in path if not exist:
+        Path(save_url_path).mkdir(parents=True, exist_ok=True)
+        # remove old file with the same name if exist:
+        if os.path.isfile(save_url_path + "\\" + save_file_name + ".png"):
+            os.remove(save_url_path + "\\" + save_file_name + ".png")
+        plt.ioff()
+        # save file:
+        # datetime object containing current date and time
+        now = dt.now()
+        if (add_datetime == []) or (add_datetime == True):
+            dt_string = now.strftime("%d%m%y_%H%M%S")
+            table.to_csv(save_url_path + "\\" + save_file_name + "_" + dt_string + '.csv')
+        else:
+            table.to_csv(save_url_path + "\\" + save_file_name + '.csv')
+
+    def get_table_by_session(self, prob_table, session_hour_range, session_action, emotions_list):
 
         # TODO: add description
 
@@ -239,7 +256,9 @@ class CordioESP_ToolBox:
                     prob_table_dateNmodel_seassion_sub_df = prob_table_dateNmodel_sub_df[session_mask]
                     # mean_prob_row = prob_table_dateNmodel_seassion_sub_df.mean(axis=0, numeric_only=True, skipna=True)
                     # mean_prob_row = getattr(prob_table_dateNmodel_seassion_sub_df.mean(axis=0, numeric_only=True, skipna=True).modules[__name__], str)
-                    mean_prob_row = getattr(prob_table_dateNmodel_seassion_sub_df, session_action)(axis=0, numeric_only=True, skipna=True)
+
+                    mean_prob_row = getattr(prob_table_dateNmodel_seassion_sub_df[emotions_list], session_action)(axis=0, numeric_only=True, skipna=True)
+                    # if session_action = 'std' and prob_table_dateNmodel_seassion_sub_df is one line mean_prob_row will be nan
 
                     basic_info_dict = {'Patient_id': [prob_table_dateNmodel_seassion_sub_df.iloc[0]['PatientName']],
                                        'SessionIdx': [session_idx],
@@ -252,6 +271,9 @@ class CordioESP_ToolBox:
                     full_info_dict = basic_info_dict
                     # remove bad entries:
                     full_info_dict = {k: full_info_dict[k] for k in graphs_df_col_names}
+                    # for debug:
+                    if pd.DataFrame(full_info_dict).isnull().values.any():
+                        print(str(date)+' '+model+' '+str(curr_time_idx))
                     # insert new row
                     graphs_df = graphs_df.append(pd.DataFrame(full_info_dict))
                     session_idx = session_idx + 1
@@ -260,7 +282,11 @@ class CordioESP_ToolBox:
                     last_true_value_idx = session_mask[::-1].idxmax()
                     curr_time_idx = last_true_value_idx + 1
                     if curr_time_idx <= last_dateNmodel_idx:
-                        curr_time = pd.to_datetime(prob_table_dateNmodel_sub_df['Time'].loc[curr_time_idx], format="%H:%M:%S")
+                        try:
+                            curr_time = pd.to_datetime(prob_table_dateNmodel_sub_df['Time'].loc[curr_time_idx], format="%H:%M:%S")
+                        except:
+                            print(str(date)+' '+model+' '+str(curr_time_idx))
+
 
         return graphs_df
 
@@ -346,7 +372,7 @@ class CordioESP_ToolBox:
             if (session_hour_range == []) or (type(session_hour_range) != int):
                 session_hour_range = 1
                 print("set session_hour_range to default value of 1 hour")
-            graph_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean')
+            graph_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean', emotions_list=emotion_list)
 
             patient_id = graph_df["Patient_id"].iloc[0]
             # ensure data in the right format:
@@ -407,7 +433,7 @@ class CordioESP_ToolBox:
             if (session_hour_range == []) or (type(session_hour_range) != int):
                 session_hour_range = 1
                 print("set session_hour_range to default value of 1 hour")
-            graph_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean')
+            graph_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean', emotions_list=emotion_list)
 
             patient_id = graph_df["Patient_id"].iloc[0]
             # ensure data in the right format:
@@ -422,6 +448,7 @@ class CordioESP_ToolBox:
             for model in model_list:
                 model_graphs_df = graph_df[graph_df['Model'] == model]
                 model_graphs_df_std_row = model_graphs_df[emotion_list].idxmax(axis=1, skipna=True)
+                from collections import Counter
                 histogram_dict = Counter(model_graphs_df_std_row)
                 #plot:
                 fig, ax = plt.subplots(num=None, figsize=(20, 10), dpi=200, facecolor='w', edgecolor='k')
@@ -739,12 +766,21 @@ class CordioESP_ToolBox:
             # loading data if available:
             try:
                 prob_table = pd.read_csv(patient_prob_table_url)
+                # remove rows with nan:
+                prob_table = prob_table[prob_table[emotion_list[0]].notna()]
+                # remap df index:
+                prob_table = prob_table.reset_index()
             except:
                 print("File not avalble in: " + patient_prob_table_url)
             # fix numbers loaded as str:
             for emotion in emotion_list:
                 if (type(prob_table[emotion][0]) == str):
                     prob_table[emotion] = prob_table[emotion].apply(pd.to_numeric, errors='coerce')
+            # remove rows with nan:
+            prob_table = prob_table[prob_table[emotion_list[0]].notna()]
+            # remap df index:
+            prob_table = prob_table.reset_index()
+            # get patient id
             patient_id = prob_table["PatientName"].iloc[0]
             # ensure data in the right format:
             if (model_list == []) or (type(model_list[0]) != str):
@@ -759,7 +795,7 @@ class CordioESP_ToolBox:
             if (session_hour_range == []) or (type(session_hour_range) != int):
                 session_hour_range = 1
                 print("set session_hour_range to default value of 1 hour")
-            prob_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='std')
+            prob_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='std', emotions_list=emotion_list)
 
             for model in model_list:
                 # cut model graph:
