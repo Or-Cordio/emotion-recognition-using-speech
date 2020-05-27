@@ -232,7 +232,9 @@ for i, patientID, sentence in zip(range(len(input_df)), input_df["patientID"], i
         all_available_ESPScalar_csv_late_ver_idx = [ESPScalar_csv_version == max(all_available_ESPScalar_csv_versions) for ESPScalar_csv_version in all_available_ESPScalar_csv_versions ]
         all_available_ESPScalar_csv_urls = list(compress(all_available_ESPScalar_csv_urls, all_available_ESPScalar_csv_late_ver_idx))
         latest_ver_ESPScalar_url = all_available_ESPScalar_csv_urls[-1] # lataest version - date is not important
-        # TODO:
+        # calculate new scalar table:
+        # --------------------------
+        # TODO: add version conrol and calculate
 
         all_available_model_model_emo_version = [float(model_model_emo_version[-36:-33]) for model_model_emo_version in all_available_model_emo_labeled_csvs]
             # updating existing emotion tableL
