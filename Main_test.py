@@ -30,21 +30,34 @@ warnings.filterwarnings('ignore')
 #               DecisionTreeClassifier(), KNeighborsClassifier(), MLPClassifier()]
 model_list = [SVC(probability=True), AdaBoostClassifier(), RandomForestClassifier(), KNeighborsClassifier()]
 
-# emotions_list = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom']
-emotions_lists = [['happy', 'sad', 'disgust', 'ps', 'boredom'],
-                  ['calm', 'happy', 'disgust', 'ps', 'boredom'],
-                  ['calm', 'happy', 'fear', 'disgust', 'boredom'],
-                  ['calm', 'happy', 'sad', 'disgust', 'ps']]
-model_emotion_dict = {'SVC': ['happy', 'sad', 'disgust', 'ps', 'boredom'],
-                      'AdaBoostClassifier': ['calm', 'happy', 'disgust', 'ps', 'boredom'],
-                      'RandomForestClassifier': ['calm', 'happy', 'fear', 'disgust', 'boredom'],
-                      'KNeighborsClassifier': ['calm', 'happy', 'sad', 'disgust', 'ps']}
+all_emotions_list = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom']
+
+# all emotions in 4 models:
+# emotions_lists = [all_emotions_list,
+#                   all_emotions_list,
+#                   all_emotions_list,
+#                   all_emotions_list]
+# model_emotion_dict = {'SVC': all_emotions_list,
+#                       'AdaBoostClassifier': all_emotions_list,
+#                       'RandomForestClassifier': all_emotions_list,
+#                       'KNeighborsClassifier': all_emotions_list}
+# spasific emotions in a model:
+emotions_lists = [['angry', 'sad', 'neutral'],
+                  ['sad', 'fear', 'boredom', 'neutral'],
+                  ['sad', 'fear', 'boredom', 'neutral'],
+                  ['sad', 'fear', 'boredom', 'neutral']]
+model_emotion_dict = {'SVC': ['angry', 'sad', 'neutral'],
+                      'AdaBoostClassifier': ['sad', 'fear', 'boredom', 'neutral'],
+                      'RandomForestClassifier': ['sad', 'fear', 'boredom', 'neutral'],
+                      'KNeighborsClassifier': ['sad', 'fear', 'boredom', 'neutral']}
+
 patientDir_paths = ["D:\work\db\RAM\RAM-0071", "D:\work\db\BSV\BSV-0006", "D:\work\db\HYA\HYA-0055"]
 same_class_per_all_models = False
 # setup_name = "9emotions_7models_first_setup"
 session_hour_range = 1
-setup_name = "5emotions_4models_second_setup"
+setup_name = "3and4emotions_4models_second_setup"
 add_datetime = True
+overwrite_tables = False
 
 # getting tools ready:
 from CordioESP import CordioESP_ToolBox
@@ -64,7 +77,7 @@ progressbar = ProgressBar(widgets=widgets, maxval=len(patientDir_paths))
 progressbar.start()
 
 # create patient_prob_tables_urls:
-all_csv_root_path = "D:\\work\\code\\Python\\ESP\\noPaperProject\\results_tablesOfProb\\" + setup_name
+all_csv_root_path = "D:\\work\\code\\Python\\ESP\\CordioESP_project\\results_tablesOfProb\\" + setup_name
 patient_prob_tables_urls = glob.glob(all_csv_root_path+"//**//*.csv", recursive=True)
 
 for i, patientDir_path, emotions_list in zip(range(len(patientDir_paths)), patientDir_paths, emotions_lists):
@@ -83,7 +96,7 @@ for i, patientDir_path, emotions_list in zip(range(len(patientDir_paths)), patie
         # check for existing table:
         is_exist = [patient_prob_tables_urls for patient_prob_tables_urls in patient_prob_tables_urls if
                     save_file_name in patient_prob_tables_urls]
-        if is_exist != []:
+        if (is_exist != []) and (overwrite_tables == False):
             continue
         # calculate table:
         table = ESP_TB.predict_all_proba_for_patient(patientDir_path, clinicalInformation, fileHandle, model_list,
@@ -98,34 +111,31 @@ for i, patientDir_path, emotions_list in zip(range(len(patientDir_paths)), patie
             all_wavs = glob.glob(os.path.join(patientDir_path, '*.wav'))
             p = Path(str(all_wavs[0]))
             patient_ID = fileHandle.CordioExtractPatient(p)
-            save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_ID
+            save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_ID + "\\" + type(
+                model).__name__
             save_file_name = 'tablesOfProb_' + patient_ID + '_' + str(len(emotions_list)) + 'classes_' + type(
                 model).__name__
             # check for existing table:
             is_exist = [patient_prob_tables_urls for patient_prob_tables_urls in patient_prob_tables_urls if save_file_name in patient_prob_tables_urls]
-            if is_exist != []:
+            if (is_exist != []) and (overwrite_tables == False):
                 continue
             # calculate table:
             table = ESP_TB.predict_all_proba_for_patient(patientDir_path, clinicalInformation, fileHandle, [model],
                                                          emotions_list)
             # save table:
-            ESP_TB.SaveTable(table, save_url_path, save_file_name, add_datetime=True)
+            ESP_TB.SaveTable(table, save_url_path, save_file_name, add_datetime=False)
 
 progressbar.finish()
-
-# patient_prob_tables_urls = [
-#     "D:\\work\\code\\Python\\ESP\\noPaperProject\\results_tablesOfProb\\tablesOfProb_RAM-0071_9classes_7models.csv",
-#     "D:\\work\\code\\Python\\ESP\\noPaperProject\\results_tablesOfProb\\tablesOfProb_HYA-0055_9classes_7models.csv",
-#     "D:\\work\\code\\Python\\ESP\\noPaperProject\\results_tablesOfProb\\tablesOfProb_BSV-0006_9classes_7models.csv"]
-# patient_prob_tables_urls = ["D:\\work\\code\\Python\\ESP\\noPaperProject\\results_tablesOfProb\\tablesOfProb_RAM-0071_9classes_7models.csv"]
 
 # plots:
 # -----
 # create patient_prob_tables_urls:
-all_csv_root_path = "D:\\work\\code\\Python\\ESP\\noPaperProject\\results_tablesOfProb\\" + setup_name
+all_csv_root_path = "D:\\work\\code\\Python\\ESP\\CordioESP_project\\results_tablesOfProb\\" + setup_name
 patient_prob_tables_urls = glob.glob(all_csv_root_path+"//**//*.csv", recursive=True)
 # plotting:
 if not same_class_per_all_models:
+    # update if there is a new data:
+    patient_prob_tables_urls = glob.glob(all_csv_root_path + "//**//*.csv", recursive=True)
     # progress bar initialization:
     widgets = [FormatLabel('<<<all prob tables process>>>'), ' ', Percentage(), ' ', Bar('#'), ' ', RotatingMarker()]
     progressbar = ProgressBar(widgets=widgets, maxval=len(patient_prob_tables_urls))
@@ -135,9 +145,12 @@ if not same_class_per_all_models:
         widgets[0] = FormatLabel('<filename-{0}>'.format(i))
         progressbar.update(i)
         # get current data:
-        model = patient_prob_tables_url.split('\\')[-1].split('_')[-3]
+        model = patient_prob_tables_url.split('\\')[-1].split('_')[-1][0:-4]
         emotion_list = model_emotion_dict[model]
         # call plot functions:
+        ESP_TB.get_model_mean_dev_by_variance_per_patientNmodel_heatmap([patient_prob_tables_url], model,
+                                                                        emotion_list, session_hour_range, setup_name)
+
         ESP_TB.patient_plotNsave_mean_prob_session_emotion_3d([patient_prob_tables_url], model, emotion_list,
                                                               session_hour_range, setup_name)
 
@@ -147,6 +160,13 @@ if not same_class_per_all_models:
         ESP_TB.patient_plotNsave_sum_histogram([patient_prob_tables_url], model, emotion_list, session_hour_range,
                                                setup_name)
     progressbar.finish()
+else:
+    model_list = [SVC(probability=True), AdaBoostClassifier(), RandomForestClassifier(), KNeighborsClassifier()]
+    emotions_list = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom']
+
+    ESP_TB.get_model_mean_dev_by_variance_per_patientNmodel_heatmap(patient_prob_tables_urls, model_list, emotions_list,
+                                                             session_hour_range, setup_name)
+
 
 
 ESP_TB.get_model_variance_per_patientNmodel_heatmap(patient_prob_tables_urls, model_list, emotions_list,

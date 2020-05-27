@@ -1,21 +1,14 @@
 import os, glob
 import pandas as pd
-import numpy as np
-import datetime
 from datetime import datetime as dt
-# import progressbar
-from matplotlib.pyplot import subplots_adjust
-from progressbar import *
 from pathlib import Path
 from emotion_recognition import EmotionRecognizer
-from progressbar import *
-import matplotlib.pyplot as plt
 from pylab import *
 import numpy as np
-from collections import Counter
 import seaborn as sn
 from progressbar import *
-import matplotlib.dates as mdates
+import pickle
+import ntpath
 
 from sklearn.svm import SVC
 from sklearn.ensemble import AdaBoostClassifier
@@ -25,26 +18,17 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 
-
-# import sys
-# # sys.path.append("D:\work\code\Python\CordioAlgorithmsPython\infrastructure")
-# sys.path.insert(0, "D:\work\code\Python\CordioAlgorithmsPython\infrastructure")
-
-# from patientsInformation.CordioPatientClinicalInformation import CordioClinicalInformation
-# import CordioFile
-
-# model_list = [SVC(probability=True), AdaBoostClassifier(), RandomForestClassifier(), GradientBoostingClassifier(),
-#               DecisionTreeClassifier(), KNeighborsClassifier(), MLPClassifier()]
-# emotions_list = ['sad', 'neutral', 'happy']
-#
-# patientDir_path = "D:\work\db\RAM\RAM-0071"
-# p = "D:\work\db\BSV\BSV-0006\BSV-0006_190520_094113_S0010_he_1.25_SM-J400F_Android26.wav"
-
 class CordioESP_ToolBox:
     """
     Expressive Speech Processing
 
-    # TODO: add class description
+    This class manage emotion detection from speech.
+    * Emotion class support:
+        'neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom'
+    * CordioESP_ToolBox support all scikit-learn models, for example:
+        'SVC', 'AdaBoostClassifier', 'RandomForestClassifier', 'GradientBoostingClassifier', 'DecisionTreeClassifier'
+    * example for usage can be find in:
+        Main_test.py or in Main_create_emotion_label_table_and_emotion_labaled_scalarDist_table.py
 
        Cordio Medical - Confidential
          Version: 0.1    2020-04-27
@@ -57,24 +41,41 @@ class CordioESP_ToolBox:
      """
 
     def __init__(self):
+        self.version = 0.1
         self.suported_emotions = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom']
         self.supported_models = ['SVC', 'AdaBoostClassifier', 'RandomForestClassifier', 'GradientBoostingClassifier',
                                  'DecisionTreeClassifier', 'KNeighborsClassifier', 'MLPClassifier']
+        self.model_emotion_dict = {'SVC': ['angry', 'sad', 'neutral'],
+                                  'AdaBoostClassifier': ['sad', 'fear', 'boredom', 'neutral'],
+                                  'RandomForestClassifier': ['sad', 'fear', 'boredom', 'neutral'],
+                                  'KNeighborsClassifier': ['sad', 'fear', 'boredom', 'neutral']}
+        self.model_list = [SVC(probability=True), AdaBoostClassifier(), RandomForestClassifier(), KNeighborsClassifier()]
+
+    def save_object(self, obj, save_url_path, filename):
+        # create folders in path if not exist:
+        Path(save_url_path).mkdir(parents=True, exist_ok=True)
+
+        with open(save_url_path+'\\'+filename, 'wb') as output:  # Overwrites any existing file.
+            pickle.dump(obj, output, pickle.HIGHEST_PROTOCOL)
 
     def modelTrain(self, model, emotions_list):
         # my_model probability attribute needs to be Truth!
 
-        # pass my model to EmotionRecognizer instance
-        # and balance the dataset
-        rec = EmotionRecognizer(model=model, emotions=emotions_list, balance=True, verbose=0, probability=True)
-        # train the model
-        rec.train()
+        save_url_path = 'trained_models'
+        filename = 'trained_' + type(model).__name__ + '_ESPVer' + str(self.version) + '.pkl'
+        # check if model exist:
+        if os.path.exists(save_url_path+'\\'+filename):
+            with open(save_url_path+'\\'+filename, 'rb') as input:
+                rec = pickle.load(input)
+        else:
+            # train the model
+            # pass my model to EmotionRecognizer instance
+            # and balance the dataset
+            rec = EmotionRecognizer(model=model, emotions=emotions_list, balance=True, verbose=0, probability=True)
+            rec.train()
+            self.save_object(rec, save_url_path, filename)
 
         return rec
-        # check the test accuracy for that model
-        # print(type(my_model).__name__+" Test score:", rec.test_score())
-        # # check the train accuracy for that model
-        # print("Train score:", rec.train_score())
 
     def modelPredict(self, rec, wav_url):
         try:
@@ -89,8 +90,8 @@ class CordioESP_ToolBox:
         df_len = len(all_wavs)
         patientNmodel_df = pd.DataFrame(index=np.arange(df_len),
                                         columns=patient_info_column_names + ['Model'] + emotions_list)
-
-        rec = self.modelTrain(model, emotions_list)
+        model_name = model if type(model)==str else type(model).__name__
+        rec = self.modelTrain(model, self.model_emotion_dict[model_name])
 
         # progress bar initialization:
         p = Path(str(all_wavs[0]))
@@ -124,6 +125,7 @@ class CordioESP_ToolBox:
             # setting clinical status:
             clinicalStatus = self.get_clinical_info(clinicalInformation, fileHandle.CordioExtractRecordingDateTime(p),
                                                patientNmodel_df.at[i, "PatientName"])
+            patientNmodel_df.at[i, "ClinicalStatus"] = clinicalStatus
 
             # setting model:
             patientNmodel_df.at[i, "Model"] = type(model).__name__
@@ -132,37 +134,43 @@ class CordioESP_ToolBox:
 
         return patientNmodel_df
 
-    def predict_all_proba_for_patient(self, patientDir_path, clinicalInformation, fileHandle, model_list,
-                                      emotions_list):
-        # get all wavs:
-        all_wavs = glob.glob(os.path.join(patientDir_path, '*.wav'))
-        num_of_wav = len(all_wavs) * len(model_list)
-
-        # create basic information table for patient:
-        patient_info_column_names = ["PatientName", "Date", "Time", "sentence", "Language", "ClinicalStatus"]
-        patient_df = pd.DataFrame(columns=patient_info_column_names + ['Model'] + emotions_list)
-
-        # progress bar initialization:
-        p = Path(str(all_wavs[0]))
-        # fileHandle = CordioFile
-        patient_ID = fileHandle.CordioExtractPatient(p)
-        widgets = [FormatLabel('<<patient: ' + patient_ID + '; all models process>>'), ' ', Percentage(), ' ',
-                   Bar('#'), ' ', RotatingMarker()]
-        progressbar = ProgressBar(widgets=widgets, maxval=len(model_list))
-        progressbar.start()
-
-        # calculating for all models:
-        for i, model in zip(range(len(model_list)), model_list):
-            # progress bar update:
-            widgets[0] = FormatLabel('<filename-{0}>'.format(i))
-            progressbar.update(i)
-
-            tmp = self.predict_all_proba_for_patientNmodel(model, fileHandle, clinicalInformation,
-                                                           patient_info_column_names, emotions_list, all_wavs)
-            patient_df = patient_df.append(tmp)
-        progressbar.finish()
-
-        return patient_df
+    # def predict_all_proba_for_patient(self, patientDir_path, clinicalInformation, fileHandle, model_list,
+    #                                   emotions_list):
+    #     # get all wavs:
+    #     all_wavs = glob.glob(os.path.join(patientDir_path, '*.wav'))
+    #     num_of_wav = len(all_wavs) * len(model_list)
+    #
+    #     # create basic information table for patient:
+    #     patient_info_column_names = ["PatientName", "Date", "Time", "sentence", "Language", "ClinicalStatus"]
+    #     patient_df = pd.DataFrame(columns=patient_info_column_names + ['Model'] + emotions_list)
+    #
+    #     # progress bar initialization:
+    #     p = Path(str(all_wavs[0]))
+    #     # fileHandle = CordioFile
+    #     patient_ID = fileHandle.CordioExtractPatient(p)
+    #     widgets = [FormatLabel('<<patient: ' + patient_ID + '; all models process>>'), ' ', Percentage(), ' ',
+    #                Bar('#'), ' ', RotatingMarker()]
+    #     progressbar = ProgressBar(widgets=widgets, maxval=len(model_list))
+    #     progressbar.start()
+    #
+    #     # calculating for all models:
+    #     for i, model in zip(range(len(model_list)), model_list):
+    #         # progress bar update:
+    #         widgets[0] = FormatLabel('<filename-{0}>'.format(i))
+    #         progressbar.update(i)
+    #
+    #         # --for debug:
+    #         sentence = 'S0007'
+    #         tmp = self.create_ESP_labeled_table(patientDir_path, model, sentence, emotions_list, clinicalInformation,
+    #                                             fileHandle)
+    #         # --
+    #         tmp = self.predict_all_proba_for_patientNmodel(model, fileHandle, clinicalInformation,
+    #                                                        patient_info_column_names, all_wavs)
+    #
+    #         patient_df = patient_df.append(tmp)
+    #     progressbar.finish()
+    #
+    #     return patient_df
 
     def get_clinical_info(self, clinicalInformation, recording_datetime, patient_id):
         clinicalInfo = clinicalInformation(patient_id, '')
@@ -254,8 +262,6 @@ class CordioESP_ToolBox:
                 while curr_time_idx <= last_dateNmodel_idx:
                     session_mask = (prob_table_dateNmodel_sub_df['Time'] >= curr_time) & (prob_table_dateNmodel_sub_df['Time'] < curr_time + datetime.timedelta(hours=session_hour_range))
                     prob_table_dateNmodel_seassion_sub_df = prob_table_dateNmodel_sub_df[session_mask]
-                    # mean_prob_row = prob_table_dateNmodel_seassion_sub_df.mean(axis=0, numeric_only=True, skipna=True)
-                    # mean_prob_row = getattr(prob_table_dateNmodel_seassion_sub_df.mean(axis=0, numeric_only=True, skipna=True).modules[__name__], str)
 
                     mean_prob_row = getattr(prob_table_dateNmodel_seassion_sub_df[emotions_list], session_action)(axis=0, numeric_only=True, skipna=True)
                     # if session_action = 'std' and prob_table_dateNmodel_seassion_sub_df is one line mean_prob_row will be nan
@@ -271,9 +277,6 @@ class CordioESP_ToolBox:
                     full_info_dict = basic_info_dict
                     # remove bad entries:
                     full_info_dict = {k: full_info_dict[k] for k in graphs_df_col_names}
-                    # for debug:
-                    if pd.DataFrame(full_info_dict).isnull().values.any():
-                        print(str(date)+' '+model+' '+str(curr_time_idx))
                     # insert new row
                     graphs_df = graphs_df.append(pd.DataFrame(full_info_dict))
                     session_idx = session_idx + 1
@@ -287,10 +290,164 @@ class CordioESP_ToolBox:
                         except:
                             print(str(date)+' '+model+' '+str(curr_time_idx))
 
-
         return graphs_df
 
-    # plot and save methods:
+    def create_ESP_patient_model_sentence_labeled_table(self, all_wavs, model, sentence, clinicalInformation, fileHandle):
+        """
+        creates a table with the following columns and data:
+                Patient name | Date | Time | clinical status | emotional hard decision label | -> current emotional
+                classes probabilities
+
+        Input:
+            patient_dir_url - a string represent the path to the folder containing a patient audio files
+            model - scikit-learn library model object
+            sentence - sentence id string ("S0007")
+            emotions_list - emotions list classes
+            clinicalInformation - clinicalInformation object
+            fileHandle - fileHandle object
+        Output:
+            patientNmodelNsentence_df - data frame containing audio files names, their details and their emotion
+                                        labeling details by model, sentence and patient
+        """
+
+        # set emotion list:
+        model_name = model if type(model)==str else type(model).__name__
+        emotions_list = self.model_emotion_dict[model_name]
+        # filter wav by sentence:
+        all_wavs = [x for x in all_wavs if sentence in x]
+        # collecting constance data:
+        df_len = len(all_wavs)
+        patient_info_column_names = ["Filename", "PatientId", "Date", "Time", "Sentence", "Model", "Language", "ClinicalStatus", "EmotionHardDecision"]
+        patientNmodelNsentence_df = pd.DataFrame(index=np.arange(df_len),
+                                        columns=patient_info_column_names + emotions_list)
+
+        rec = self.modelTrain(model, emotions_list)
+
+        # progress bar initialization:
+        p = Path(str(all_wavs[0]))
+        # fileHandle = CordioFile
+        patient_ID = fileHandle.CordioExtractPatient(p)
+        patient_model = type(model).__name__
+        widgets = [FormatLabel('<patient: ' + patient_ID + '; model: ' + patient_model + '>'), ' ', Percentage(), ' ',
+                   Bar('#'), ' ', RotatingMarker()]
+        progressbar = ProgressBar(widgets=widgets, maxval=df_len)
+        progressbar.start()
+
+        # fill df:
+        for (i, wav) in zip(range(df_len), all_wavs):
+            # progress bar update:
+            widgets[0] = FormatLabel('<filename-{0}>'.format(i))
+            progressbar.update(i)
+            # predict current wav
+            prediction = self.modelPredict(rec, wav)
+            # add soft decision probabilities for each emotion
+            patientNmodelNsentence_df.loc[i] = prediction
+            # add hard decision probabilities for each emotion
+            if(type(prediction) == dict ):
+                patientNmodelNsentence_df.at[i, "EmotionHardDecision"] = max(prediction, key=prediction.get)
+            else:
+                patientNmodelNsentence_df.at[i, "EmotionHardDecision"] = prediction
+            # insert basic information:
+            p = Path(str(wav))
+            patientNmodelNsentence_df.at[i, "Filename"] = os.path.basename(p)
+            patientNmodelNsentence_df.at[i, "PatientId"] = fileHandle.CordioExtractPatient(p)
+            patientNmodelNsentence_df.at[i, "Date"] = fileHandle.CordioExtractRecordingDateTime(p).strftime("%d/%m/%Y")
+            patientNmodelNsentence_df.at[i, "Time"] = fileHandle.CordioExtractRecordingDateTime(p).strftime("%H:%M:%S")
+            patientNmodelNsentence_df.at[i, "Sentence"] = fileHandle.CordioExtractSentence(p)
+            patientNmodelNsentence_df.at[i, "Language"] = fileHandle.CordioExtractLanguage(p)
+            # TODO: add App version, Device identifier and OS version columns
+
+            # setting clinical status:
+            clinicalStatus = self.get_clinical_info(clinicalInformation, fileHandle.CordioExtractRecordingDateTime(p),
+                                                    patientNmodelNsentence_df.at[i, "PatientId"])
+            patientNmodelNsentence_df.at[i, "ClinicalStatus"] = clinicalStatus
+
+            # setting model:
+            patientNmodelNsentence_df.at[i, "Model"] = type(model).__name__
+
+        progressbar.finish()
+
+        return patientNmodelNsentence_df
+
+    def append_ESP_patient_model_sentence_labeled_table(self, patient_dir_url, table, model, sentence, clinicalInformation, fileHandle):
+        """
+                update a table with the following columns and data:
+                        Patient name | Date | Time | clinical status | emotional hard decision label | -> current emotional
+                        classes probabilities
+
+                Input:
+                    patient_dir_url - a string represent the path to the folder containing a patient audio files
+                    table - a table to update
+                    model - scikit-learn library model object
+                    sentence - sentence id string ("S0007")
+                    emotions_list - emotions list classes
+                    clinicalInformation - clinicalInformation object
+                    fileHandle - fileHandle object
+                Output:
+                    patientNmodelNsentence_df - data frame containing audio files names, their details and their emotion
+                                                labeling details by model, sentence and patient
+                """
+
+        patient_info_column_names = ["FileIdx", "Filename", "PatientId", "Date", "Time", "Sentence", "Model", "Language", "ClinicalStatus", "EmotionHardDecision"]
+        # check table:
+        if list(table.columns)[0:10] != patient_info_column_names:
+            sys.exit('\ngiven table columns format error')
+
+        # filtering new audio files to process:
+        processed_wavs = table["Filename"]
+        all_wav_urls = glob.glob(os.path.join(patient_dir_url, '*.wav'))
+        all_wav_urls = [x for x in all_wav_urls if sentence in x] # filter wav by sentence
+        wav_url_to_process = [wav_url for wav_url in all_wav_urls if not self.isValInList(ntpath.basename(wav_url), processed_wavs)]
+        if wav_url_to_process != []:
+            new_table = self.create_ESP_patient_model_sentence_labeled_table(wav_url_to_process, model, sentence, clinicalInformation, fileHandle)
+            return table.append(new_table)
+        else:
+            return table
+
+    def isValInList(self, val, lst):
+        # check `in` for each element in the list
+        return any([val in x for x in lst])
+
+    def manipulate_scalar_distance_table(self, scalar_dist_table_url, emo_labeled_data_table_url):
+        '''
+        the function combimed using the data from emo_labeled_data_table_url to filter the data in scalar_dist_table_url
+        in a way that it will have only same class labels in same column test and ref audio files
+
+        Input:
+            scalar_dist_table_url - table that summarize all available distances between all patient audio files for
+                                    specific sentence
+            emo_labeled_data_table_url - table contains all patient audio files for specific sentence with their emotion
+                                         class prediction
+        Output:
+            scalar_dist_df - filtered scalar_dist_table_url with labeling for each audio file
+        '''
+        # input integrity check:
+        scalar_dist_table_url_name_array = os.path.basename(Path(scalar_dist_table_url)).split("_")
+        emo_labeled_data_table_name_array = os.path.basename(Path(emo_labeled_data_table_url)).split("_")
+        if scalar_dist_table_url_name_array[2] != emo_labeled_data_table_name_array[-2]:
+            raise Exception("Input Error: tables given are of different patients"); return
+        if scalar_dist_table_url_name_array[3] != emo_labeled_data_table_name_array[-1][0:-4]:
+            raise Exception("Input Error: tables given are of different sentences"); return
+
+        # load data into df:
+        scalar_dist_df = pd.read_csv(scalar_dist_table_url)
+        emo_labeled_df = pd.read_csv(Path(emo_labeled_data_table_url))
+
+        # adding emo labeling to scalar_dist_df:
+        for audioFile, label in zip(emo_labeled_df['AudioFileName'], emo_labeled_df['EmotionHardDecision']):
+            # adding testFile data:
+            tmpFile_idx = scalar_dist_df['testFilename'] == audioFile
+            scalar_dist_df.loc[tmpFile_idx, 'testFilenameEmoLabel'] = label
+            # adding refFile data:
+            tmpFile_idx = scalar_dist_df['refFilename'] == audioFile
+            scalar_dist_df.loc[tmpFile_idx, 'refFilenameEmoLabel'] = label
+
+        # filter scalar_dist_df to onle same emotion label in test & ref file name:
+        scalar_dist_df = scalar_dist_df[scalar_dist_df['testFilenameEmoLabel'] == scalar_dist_df['refFilenameEmoLabel']]
+
+        return scalar_dist_df
+
+        # plot and save methods:
     # ---------------------
 
     def patient_plotNsave_emotion_over_time(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
@@ -629,122 +786,6 @@ class CordioESP_ToolBox:
                 fig.savefig(save_url_path+"\\"+save_file_name+".png", bbox_inches='tight')
                 plt.close(fig)
 
-    # def get_model_variance_per_patient_notGood(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name, multi_graph):
-    #     """
-    #     Description: the function gets number of patients, models and emotion classes. the function calculate the
-    #     mean variance for each session and plot this value over time(date).
-    #
-    #     Input:
-    #         :parm patient_prob_tables_urls: list of urls to each patiant .wav files
-    #         :type patient_prob_tables_urls:
-    #         :parm model_list: list of scikit learn models. should be set to output probabilities
-    #         :type model_list:
-    #         :parm emotion_list: list of emotion classes
-    #         :type emotion_list:
-    #         :param setup_name: string that describes the current setup under which the models where trained by
-    #         :type setup_name:
-    #     """
-    #     # TODO: complete documentation
-    #     # TODO: finish function
-    #     for patient_prob_table_url in patient_prob_tables_urls:
-    #         # loading data if available:
-    #         try:
-    #             prob_table = pd.read_csv(patient_prob_table_url)
-    #         except:
-    #             print("File not avalble in: "+patient_prob_table_url)
-    #         # fix numbers loaded as str:
-    #         for emotion in emotion_list:
-    #             if(type(prob_table[emotion][0]) == str):
-    #                 prob_table[emotion] = prob_table[emotion].apply(pd.to_numeric, errors='coerce')
-    #         patient_id = prob_table["PatientName"].iloc[0]
-    #         # ensure data in the right format:
-    #         if (model_list == []) or (type(model_list[0]) != str):
-    #             model_list = prob_table.Model.unique()
-    #             print("using all available models")
-    #         # remove unsupported models:
-    #         model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
-    #         emotion_list = [val for idx, val in enumerate(self.suported_emotions) if val in emotion_list]
-    #         # add IsWet column:
-    #
-    #         # get graph_df:
-    #         if (session_hour_range == []) or (type(session_hour_range) != int):
-    #             session_hour_range = 1
-    #             print("set session_hour_range to default value of 1 hour")
-    #         prob_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean')
-    #
-    #         for model in model_list:
-    #             prob_table_by_sessionNmodel_df = prob_table_by_session_df[prob_table_by_session_df['Model'] == model] # filter by model
-    #             prob_table_by_sessionNmodel_df['std'] = prob_table_by_sessionNmodel_df.std(axis=1, numeric_only=True, skipna=True)
-    #             fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=False,  figsize=(20, 10), dpi=200, facecolor='w',
-    #                                    edgecolor='k')
-    #             prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
-    #             x = prob_table_by_sessionNmodel_df['Date']
-    #             y = prob_table_by_sessionNmodel_df['std']
-    #             ax.plot(x, y, linestyle='--', marker='o', label=emotion)
-    #             ax.fill_between(x, 0, 1, where=prob_table_by_sessionNmodel_df['IsWet'],
-    #                             color='aqua', alpha=0.4,
-    #                             transform=ax.get_xaxis_transform())  # plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
-    #             ax.yaxis.set_major_locator(plt.MaxNLocator(4))
-    #             ax.xaxis.set_major_locator(plt.MaxNLocator(30))  # reducing number of plot ticks
-    #             plt.setp(ax.xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
-    #             ax.grid()
-    #             fig.suptitle('Mean Sessions STD Over All Emotions\Classes\n' + 'trained with ' + str(len(
-    #                 emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
-    #             plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
-    #             ax.set_ylabel('Mean Sessions STD')
-    #
-    #
-    #         # sublot implamentation:
-    #         number_of_subplots = len(model_list)
-    #         subplots_columns = 4
-    #         number_of_rows = number_of_subplots // subplots_columns
-    #         number_of_rows += (number_of_subplots % subplots_columns)>0
-    #         Position = range(1, number_of_subplots + 1)
-    #
-    #         Position = range(1, number_of_subplots + 1)
-    #         # fig = plt.figure(figsize=(20, 10), dpi=200, facecolor='w', edgecolor='k')
-    #         # fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.4)
-    #         fig, ax= plt.subplots(nrows=number_of_rows, ncols=subplots_columns, sharex=True, sharey=False, figsize=(20, 10), dpi=200, facecolor='w',
-    #                      edgecolor='k')
-    #         model_idx=0
-    #         for row in range(number_of_rows):
-    #             for col in range(subplots_columns):
-    #                 if model_idx > len(model_list)-1:
-    #                     break
-    #                 model = model_list[model_idx]
-    #                 prob_table_by_sessionNmodel_df = prob_table_by_session_df[
-    #                     prob_table_by_session_df['Model'] == model]  # filter by model
-    #                 prob_table_by_sessionNmodel_df['std'] = prob_table_by_sessionNmodel_df.std(axis=1,
-    #                                                                                            numeric_only=True,
-    #                                                                                            skipna=True)
-    #
-    #                 prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
-    #                 x = prob_table_by_sessionNmodel_df['Date']
-    #                 y = prob_table_by_sessionNmodel_df['std']
-    #                 ax[row, col].plot(x, y, linestyle='--', marker='o', label=emotion)
-    #                 ax[row, col].fill_between(x, 0, 1, where=prob_table_by_sessionNmodel_df['IsWet'],
-    #                                 color='aqua', alpha=0.4,
-    #                                 transform=ax[row, col].get_xaxis_transform())  # plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
-    #                 ax[row, col].yaxis.set_major_locator(plt.MaxNLocator(4))
-    #                 ax[row, col].xaxis.set_major_locator(plt.MaxNLocator(20))  # reducing number of plot ticks
-    #                 plt.setp(ax[row, col].xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
-    #                 ax[row, col].grid()
-    #                 plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
-    #                 ax[row, col].set_ylabel('Mean Sessions STD')
-    #                 ax[row, col].title.set_text('Mean Sessions STD Over All Emotions\Classes\n' + 'trained with ' + str(len(
-    #                     emotion_list)) + ' classes\n' + 'Patient: ' + patient_id + ', Model: ' + model)
-    #
-    #                 model_idx = model_idx + 1
-    #         fig.tight_layout(pad=4.0)
-    #
-    #
-    #             # save fig:
-    #             save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_id + "\\" + model
-    #             save_file_name = 'MeanSessionsSTDOverAllEmotions' + '_trainedWith' + str(
-    #                 len(emotion_list)) + 'Classes' + '_' + patient_id + '_' + model
-    #             self.SaveFig(fig, save_url_path, save_file_name, add_datetime=False, close_fig=True)
-
-
     def get_model_variance_per_patientNmodel_heatmap(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
         """
         Description: the function gets number of patients, models and emotion classes. the function calculate the
@@ -761,7 +802,6 @@ class CordioESP_ToolBox:
             :type setup_name:
         """
         # TODO: complete documentation
-        # TODO: finish function
         for patient_prob_table_url in patient_prob_tables_urls:
             # loading data if available:
             try:
@@ -795,11 +835,11 @@ class CordioESP_ToolBox:
             if (session_hour_range == []) or (type(session_hour_range) != int):
                 session_hour_range = 1
                 print("set session_hour_range to default value of 1 hour")
-            prob_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='std', emotions_list=emotion_list)
+            prob_std_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='std', emotions_list=emotion_list)
 
             for model in model_list:
                 # cut model graph:
-                prob_table_by_sessionNmodel_df = prob_table_by_session_df[prob_table_by_session_df['Model']==model]
+                prob_table_by_sessionNmodel_df = prob_std_table_by_session_df[prob_std_table_by_session_df['Model']==model]
                 prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
                 prob_table_by_sessionNmodel_df['Date'] = pd.to_datetime(prob_table_by_sessionNmodel_df['Date'], format="%d/%m/%Y")
                 prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.set_index('Date')
@@ -839,6 +879,142 @@ class CordioESP_ToolBox:
                 # save fig:
                 save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_id + "\\" + model
                 save_file_name = 'MeanSessionsStdOverAllEmotionsHeatMap' + '_trainedWith' + str(
+                    len(emotion_list)) + 'Classes' + '_' + patient_id + '_' + model
+                self.SaveFig(fig, save_url_path, save_file_name, add_datetime=False, close_fig=True)
+
+    def get_model_mean_dev_by_variance_per_patientNmodel_heatmap(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):
+        """
+        Description: the function gets number of patients, models and emotion classes. the function calculate the
+        mean variance for each session and plot this value over time(date).
+
+        Input:
+            :parm patient_prob_tables_urls: list of urls to each patiant .wav files
+            :type patient_prob_tables_urls:
+            :parm model_list: list of scikit learn models. should be set to output probabilities
+            :type model_list:
+            :parm emotion_list: list of emotion classes
+            :type emotion_list:
+            :param setup_name: string that describes the current setup under which the models where trained by
+            :type setup_name:
+        """
+        # TODO: complete documentation
+        for patient_prob_table_url in patient_prob_tables_urls:
+            # loading data if available:
+            try:
+                prob_table = pd.read_csv(patient_prob_table_url)
+                # remove rows with nan:
+                prob_table = prob_table[prob_table[emotion_list[0]].notna()]
+                # remap df index:
+                prob_table = prob_table.reset_index()
+            except:
+                print("File not avalble in: " + patient_prob_table_url)
+            # fix numbers loaded as str:
+            for emotion in emotion_list:
+                if (type(prob_table[emotion][0]) == str):
+                    prob_table[emotion] = prob_table[emotion].apply(pd.to_numeric, errors='coerce')
+            # remove rows with nan:
+            prob_table = prob_table[prob_table[emotion_list[0]].notna()]
+            # remap df index:
+            prob_table = prob_table.reset_index()
+            # get patient id
+            patient_id = prob_table["PatientName"].iloc[0]
+            # ensure data in the right format:
+            if (model_list == []) or (type(model_list[0]) != str):
+                model_list = prob_table.Model.unique()
+                # print("using all available models")
+            # replace low numbers with 0
+            prob_table[emotion_list] = prob_table[emotion_list].applymap(lambda x: 0 if x < 1e-3 else x)
+            # remove unsupported models:
+            model_list = [val for idx, val in enumerate(self.supported_models) if val in model_list]
+            emotion_list = [val for idx, val in enumerate(self.suported_emotions) if val in emotion_list]
+
+            # get mean_dev_by_std table:
+            # -------------------------
+            # --set default session_hour_range if needed:
+            if (session_hour_range == []) or (type(session_hour_range) != int):
+                session_hour_range = 1
+                print("set session_hour_range to default value of 1 hour")
+            # --create squrt(varience) (std) table by session:
+            # prob_table[emotion_list] = prob_table[emotion_list].applymap(lambda x: np.nan if x < 1e-3 else x) # replace low numbers with NaNs
+            prob_var_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='var', emotions_list=emotion_list)
+            prob_var_table_by_session_df = prob_var_table_by_session_df.reset_index()
+            # prob_var_table_by_session_df[emotion_list] = prob_var_table_by_session_df[emotion_list].replace({0: np.nan})# replace zeros with NaNs
+            sqrt_prob_var_table_by_session_df = prob_var_table_by_session_df.apply(lambda x: np.sqrt(x) if np.issubdtype(x.dtype, np.number) else x)
+            # remove raw full of nan (results from one audio file per session):
+            removed_row_index = ~sqrt_prob_var_table_by_session_df[emotion_list].isna().all(1)
+            sqrt_prob_var_table_by_session_df = sqrt_prob_var_table_by_session_df[removed_row_index]
+            # clipping lower then 1e-1 values from sqrt_prob_var_table_by_session_df:
+            sqrt_prob_var_table_by_session_df[emotion_list] = sqrt_prob_var_table_by_session_df[emotion_list].applymap(lambda x: 1e-1 if x < 1e-2 else x)# replace low numbers with 0.1
+            # --create mean table by session:
+            prob_mean_table_by_session_df = self.get_table_by_session(prob_table, session_hour_range, session_action='mean', emotions_list=emotion_list)
+            prob_mean_table_by_session_df = prob_mean_table_by_session_df.reset_index()
+            prob_mean_table_by_session_df = prob_mean_table_by_session_df[removed_row_index]# remove same rows(sessions) removed from sqrt_prob_var_table_by_session_df (full row NaN value)
+            # set low mean number to be 0:
+            prob_mean_table_by_session_df[emotion_list] = prob_mean_table_by_session_df[emotion_list].applymap(lambda x: 0 if x < 1e-1 else x)
+            # create mean_dev_by_std table:
+            prob_mean_dev_by_variance_by_session_df = prob_var_table_by_session_df[removed_row_index].copy()
+            prob_mean_dev_by_variance_by_session_df[emotion_list] = prob_mean_table_by_session_df[emotion_list] / sqrt_prob_var_table_by_session_df[emotion_list]
+           # normalize data to be between 0 to 1:
+            # prob_mean_dev_by_variance_by_session_df[emotion_list] = prob_mean_dev_by_variance_by_session_df[emotion_list] / max(prob_mean_dev_by_variance_by_session_df[emotion_list].max())
+            # log10 the table:
+            # prob_mean_dev_by_variance_by_session_df[emotion_list] = prob_mean_dev_by_variance_by_session_df[emotion_list].apply(
+            #     lambda x: np.log(x) if np.issubdtype(x.dtype, np.number) else x)
+
+            # create graph for each model:
+            # ___________________________
+            for model in model_list:
+                # cut model graph:
+                prob_table_by_sessionNmodel_df = prob_mean_dev_by_variance_by_session_df[prob_mean_dev_by_variance_by_session_df['Model']==model]
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.reset_index()
+                prob_table_by_sessionNmodel_df['Date'] = pd.to_datetime(prob_table_by_sessionNmodel_df['Date'], format="%d/%m/%Y")
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.set_index('Date')
+                emotion_list_with_clinical_status = emotion_list.copy()
+                emotion_list_with_clinical_status.append('IsWet')
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df[emotion_list_with_clinical_status]
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.astype(float)
+                # defining isWet to be proportional high:
+                maxValue = max(prob_table_by_sessionNmodel_df[emotion_list].max())
+                prob_table_by_sessionNmodel_df['IsWet'] = prob_table_by_sessionNmodel_df['IsWet'] * maxValue
+                # transposing data:
+                prob_table_by_sessionNmodel_df = prob_table_by_sessionNmodel_df.transpose()
+
+                # plot
+                fig, ax = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=False, figsize=(20, 10), dpi=200,
+                                       facecolor='w', edgecolor='k')
+                ax = sn.heatmap(prob_table_by_sessionNmodel_df, annot=False)
+                # rewrite x labels text:
+                labels = [item.get_text() for item in ax.get_xticklabels()]
+                for i in range(len(labels)):
+                    labels[i] = labels[i][0:10]
+                ax.set_xticklabels(labels)
+                # reduse x ticks number:
+                # x_ticks = ax.get_xticklabels()
+                # ax.xaxis.set_major_locator(linspace(x_ticks[0].get_position()[0], x_ticks[-1].get_position()[0], 30))
+                # ax.xaxis.set_ticks(linspace(x_ticks[0].get_position()[0], x_ticks[-1].get_position()[0], 30))
+                #
+                # locator = plt.MaxNLocator(nbins=30)  # with 3 bins you will have 4 ticks
+                # ax.yaxis.set_major_locator(locator)
+                #
+                # stratDay = prob_table_by_sessionNmodel_df.columns[0]
+                # endDay = prob_table_by_sessionNmodel_df.columns[len(prob_table_by_sessionNmodel_df.columns)-1]
+                # ax.set_xticks(pd.date_range(start=stratDay, end=endDay, freq=(endDay-stratDay)/30, normalize=True), minor=False)
+                # start, end = ax.get_xlim()
+                # ax.xaxis.set_ticks(np.arange(start, end, 30))
+                # ax.xaxis.set_major_locator(plt.MaxNLocator(30))  # reducing number of plot ticks
+                # plt.setp(ax.xaxis.get_majorticklabels(), rotation=30)  # rotate plot tics
+
+                ax.yaxis.set_major_locator(plt.MaxNLocator(len(emotion_list_with_clinical_status)))
+
+                fig.suptitle('Session class quality index per Emotion\Class ' + r'$\left(\frac{mean(class)}{\sqrt{var(class)}}\right)$' + '\n' +
+
+                             'trained with ' + str(len(emotion_list)) + ' classes\n' +
+                             'Patient: ' + patient_id + ', Model: ' + model)
+                plt.xlabel('Date\n(may be multiple sessions in one dates - different hours)')
+                ax.set_ylabel('STD per Emotion')
+
+                # save fig:
+                save_url_path = "results_tablesOfProb\\" + setup_name + "\\" + patient_id + "\\" + model
+                save_file_name = 'SessionClassQualityIndexPerEmotion' + '_trainedWith' + str(
                     len(emotion_list)) + 'Classes' + '_' + patient_id + '_' + model
                 self.SaveFig(fig, save_url_path, save_file_name, add_datetime=False, close_fig=True)
 
