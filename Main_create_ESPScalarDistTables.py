@@ -166,15 +166,13 @@ import pandas as pd
 from tqdm import tqdm
 from itertools import compress
 import ntpath
+from pathlib import Path
 
 sys.path.insert(0, "D:\work\code\Python\CordioAlgorithmsPython\infrastructure")
 from patientsInformation.CordioPatientClinicalInformation import CordioClinicalInformation
 import CordioFile
 
-
 warnings.filterwarnings('ignore')
-
-# TODO: Add version control mechanism --> do not compute for same version
 
 # getting tools ready:
 # -------------------
@@ -205,7 +203,7 @@ for i, patientID, sentence in zip(range(len(input_df)), input_df["patientID"], i
     save_url_path = patientDir_path + '\\results\\CordioPythonDistanceCalculation'
     emo_labeled_data_tables_url = patientDir_path + '\\results\\CordioESP'
     # get patient ESP CSVs:
-    all_available_ESPScalar_csvs = glob.glob(save_url_path + "//**//*.csv", recursive=True)
+    all_available_Scalar_csvs = glob.glob(save_url_path + "//**//*.csv", recursive=True)
     all_available_emo_labeled_csvs = glob.glob(emo_labeled_data_tables_url + "//**//*.csv", recursive=True)
     for model in ESP_TB.model_list:
         # save_file_name = 'ESPResults_' + type(model).__name__ + '_V' + str(ESP_TB.version) + '_' + patientID + \
@@ -214,7 +212,7 @@ for i, patientID, sentence in zip(range(len(input_df)), input_df["patientID"], i
         # get emotion labeled data table:
         # ------------------------------
         # check for existing table with the same version:
-        all_available_model_emo_labeled_csvs = [model_emo_labeled_csv for model_emo_labeled_csv in all_available_model_emo_labeled_csvs if sentence in model_emo_labeled_csv]
+        all_available_model_emo_labeled_csvs = [model_emo_labeled_csv for model_emo_labeled_csv in all_available_emo_labeled_csvs if sentence in model_emo_labeled_csv]
         all_available_model_emo_labeled_csvs = [ESP_model_csv for ESP_model_csv in all_available_emo_labeled_csvs if type(model).__name__ in ESP_model_csv]
         all_available_model_model_emo_version = [float(model_model_emo_version[-36:-33]) for model_model_emo_version in all_available_model_emo_labeled_csvs]
         all_available_model_model_emo_lataset_ver_idx = [model_model_emo_version == ESP_TB.version for model_model_emo_version in all_available_model_model_emo_version]
@@ -223,47 +221,30 @@ for i, patientID, sentence in zip(range(len(input_df)), input_df["patientID"], i
         emo_table_url = latest_ver_table_urls[-1]# same version -> time doesnt matter
         # get scalar dist labeled data table:
         # ------------------------------
-        all_available_ESPScalar_csv_urls = [ESPScalar_csv_url for ESPScalar_csv_url in all_available_ESPScalar_csvs if 'ScalarAsrDtwDistSummary' in ESPScalar_csv_url]
-        if all_available_ESPScalar_csv_urls == []: continue
-        all_available_ESPScalar_csv_urls = [ESPScalar_csv_url for ESPScalar_csv_url in all_available_ESPScalar_csv_urls if sentence in ESPScalar_csv_url]
-        if all_available_ESPScalar_csv_urls == []: continue
+        all_available_Scalar_csv_urls = [Scalar_csv_url for Scalar_csv_url in all_available_Scalar_csvs if 'ScalarAsrDtwDistSummary' in Scalar_csv_url]
+        if all_available_Scalar_csv_urls == []: continue
+        all_available_Scalar_csv_urls = [Scalar_csv_url for Scalar_csv_url in all_available_Scalar_csv_urls if sentence in Scalar_csv_url]
+        if all_available_Scalar_csv_urls == []: continue
+        all_available_Scalar_csv_urls = [Scalar_csv_url for Scalar_csv_url in all_available_Scalar_csv_urls if 'ESP' not in Scalar_csv_url]
+        if all_available_Scalar_csv_urls == []: continue
         # get version
-        all_available_ESPScalar_csv_versions = [float(ntpath.basename(ESPScalar_csv_url)[25:28]) for ESPScalar_csv_url in all_available_ESPScalar_csv_urls]
-        all_available_ESPScalar_csv_late_ver_idx = [ESPScalar_csv_version == max(all_available_ESPScalar_csv_versions) for ESPScalar_csv_version in all_available_ESPScalar_csv_versions ]
-        all_available_ESPScalar_csv_urls = list(compress(all_available_ESPScalar_csv_urls, all_available_ESPScalar_csv_late_ver_idx))
-        latest_ver_ESPScalar_url = all_available_ESPScalar_csv_urls[-1] # lataest version - date is not important
+        all_available_Scalar_csv_versions = [float(ntpath.basename(ESPScalar_csv_url)[25:28]) for ESPScalar_csv_url in all_available_Scalar_csv_urls]
+        all_available_Scalar_csv_late_ver_idx = [Scalar_csv_version == max(all_available_Scalar_csv_versions) for Scalar_csv_version in all_available_Scalar_csv_versions]
+        all_available_Scalar_csv_urls = list(compress(all_available_Scalar_csv_urls, all_available_Scalar_csv_late_ver_idx))
+        scalarDist_table_url = all_available_Scalar_csv_urls[-1] # lataest version - date is not important
         # calculate new scalar table:
         # --------------------------
-        # TODO: add version conrol and calculate
+        save_file_name = 'ESPResults_' + type(model).__name__ + '_ESPVer' + str(ESP_TB.version) + '_' + Path(scalarDist_table_url).name[:-18]
+        # version control:
+        isExist = [True for Scalar_csv in all_available_Scalar_csvs if save_file_name in Scalar_csv]
+        if any(isExist): continue
+            # updating existing ESP table if needed:
 
-        all_available_model_model_emo_version = [float(model_model_emo_version[-36:-33]) for model_model_emo_version in all_available_model_emo_labeled_csvs]
-            # updating existing emotion tableL
-            latest_ver_table_urls = list(compress(all_available_model_emo_labeled_csvs, all_available_model_model_emo_lataset_ver_idx))
-            table = pd.read_csv(latest_ver_table_urls[-1])
-            new_table = ESP_TB.append_ESP_patient_model_sentence_labeled_table(patientDir_path, table, model, sentence, clinicalInformation, fileHandle)
-        else:
-            # calculate new emotion table:
-            # get all wavs:
-            all_wavs = glob.glob(os.path.join(patientDir_path, '*.wav'))
-            table = ESP_TB.create_ESP_patient_model_sentence_labeled_table(all_wavs, model, sentence,
-                                                                           clinicalInformation, fileHandle)
+        # calculate new table:
+        manipulated_scalarDist_df = ESP_TB.manipulate_scalar_distance_table(scalarDist_table_url, emo_table_url)
+        manipulated_scalarDist_df = manipulated_scalarDist_df.reset_index(drop=True)
+        # save table:
+        ESP_TB.SaveTable(manipulated_scalarDist_df, save_url_path, save_file_name, add_datetime=True, is_index_col=False)
 
-        if ("new_table" in locals()):
-            if(len(new_table)>len(table)):
-                # if table existed and updated:
-                os.remove(latest_ver_table_urls[-1]) # remove previes table
-                new_table['FileIdx'] = []
-                new_table = table.reset_index()
-                new_table.index.name = 'FileIdx'
-                new_table.index = new_table.index + 1
-                ESP_TB.SaveTable(table, save_url_path, save_file_name, add_datetime=True)
-            # if len(new_table)<=len(table) then keep the original table
-        else:
-            table.index.name = 'FileIdx'
-            table.index = table.index + 1
-            # save table:
-            ESP_TB.SaveTable(table, save_url_path, save_file_name, add_datetime=True)
-
-        if ("new_table" in locals()): del new_table
 
 progressbar.close()

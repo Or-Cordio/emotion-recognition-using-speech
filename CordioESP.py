@@ -9,7 +9,8 @@ import seaborn as sn
 from progressbar import *
 import pickle
 import ntpath
-
+from pathlib import Path
+import shutil
 from sklearn.svm import SVC
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -80,8 +81,24 @@ class CordioESP_ToolBox:
     def modelPredict(self, rec, wav_url):
         try:
             out = rec.predict_proba(wav_url)
+            # wav_url == '\\\\192.168.55.210\\f$\\db\\BSV\\BSV-0009\\BSV-0009_200403_105407_S0007_he_1.54_SMJ400F_Android26.wav'
         except ValueError:
-            out = type(rec.model).__name__ + " doesnt support in predict_proba"
+            wavPath = Path(wav_url)
+            print('\nempty file skipped: '+wavPath.name)
+            out = 'empty file'
+        except RuntimeError:
+         wavPath = Path(wav_url)
+         print("\nFixing header: "+wavPath.name)
+         LOCAL_PATH = os.getcwd()
+         shutil.copyfile(wav_url, LOCAL_PATH+'\\'+wavPath.name)
+         os.system("ffmpeg -nostats -loglevel 0 -i " + LOCAL_PATH+'\\'+wavPath.name + " -f s16le -acodec pcm_s16le -y temp.pcm")
+         os.system("ffmpeg -nostats -loglevel 0 -f s16le -ar 48.0k -ac 1 -i temp.pcm " +  LOCAL_PATH+'\\'+wavPath.name + " -y")
+         print("\nDone fixing the header")
+         out = rec.predict_proba( LOCAL_PATH+'\\'+wavPath.name )
+         # remove temp files:
+         os.remove(LOCAL_PATH+'\\'+wavPath.name)
+         os.remove(LOCAL_PATH + '\\temp.pcm')
+
         return out
 
     def predict_all_proba_for_patientNmodel(self, model, fileHandle, clinicalInformation, patient_info_column_names,
@@ -205,7 +222,7 @@ class CordioESP_ToolBox:
         if close_fig:
             plt.close(fig)
 
-    def SaveTable(self, table, save_url_path, save_file_name, add_datetime):
+    def SaveTable(self, table, save_url_path, save_file_name, add_datetime, is_index_col=True):
         # from pathlib import Path
         # create folders in path if not exist:
         Path(save_url_path).mkdir(parents=True, exist_ok=True)
@@ -218,9 +235,9 @@ class CordioESP_ToolBox:
         now = dt.now()
         if (add_datetime == []) or (add_datetime == True):
             dt_string = now.strftime("%d%m%y_%H%M%S")
-            table.to_csv(save_url_path + "\\" + save_file_name + "_" + dt_string + '.csv')
+            table.to_csv(save_url_path + "\\" + save_file_name + "_" + dt_string + '.csv', index=is_index_col)
         else:
-            table.to_csv(save_url_path + "\\" + save_file_name + '.csv')
+            table.to_csv(save_url_path + "\\" + save_file_name + '.csv', index=is_index_col)
 
     def get_table_by_session(self, prob_table, session_hour_range, session_action, emotions_list):
 
@@ -389,6 +406,9 @@ class CordioESP_ToolBox:
                 """
 
         patient_info_column_names = ["FileIdx", "Filename", "PatientId", "Date", "Time", "Sentence", "Model", "Language", "ClinicalStatus", "EmotionHardDecision"]
+        # fix table if needed:
+        if 'Unnamed: 0' in list(table.columns)[0:10]:
+            table = table.drop('Unnamed: 0', axis=1)
         # check table:
         if list(table.columns)[0:10] != patient_info_column_names:
             sys.exit('\ngiven table columns format error')
@@ -424,9 +444,9 @@ class CordioESP_ToolBox:
         # input integrity check:
         scalar_dist_table_url_name_array = os.path.basename(Path(scalar_dist_table_url)).split("_")
         emo_labeled_data_table_name_array = os.path.basename(Path(emo_labeled_data_table_url)).split("_")
-        if scalar_dist_table_url_name_array[2] != emo_labeled_data_table_name_array[-2]:
+        if scalar_dist_table_url_name_array[2] != emo_labeled_data_table_name_array[3]:
             raise Exception("Input Error: tables given are of different patients"); return
-        if scalar_dist_table_url_name_array[3] != emo_labeled_data_table_name_array[-1][0:-4]:
+        if scalar_dist_table_url_name_array[3] != emo_labeled_data_table_name_array[4]:
             raise Exception("Input Error: tables given are of different sentences"); return
 
         # load data into df:
@@ -434,7 +454,7 @@ class CordioESP_ToolBox:
         emo_labeled_df = pd.read_csv(Path(emo_labeled_data_table_url))
 
         # adding emo labeling to scalar_dist_df:
-        for audioFile, label in zip(emo_labeled_df['AudioFileName'], emo_labeled_df['EmotionHardDecision']):
+        for audioFile, label in zip(emo_labeled_df['Filename'], emo_labeled_df['EmotionHardDecision']):
             # adding testFile data:
             tmpFile_idx = scalar_dist_df['testFilename'] == audioFile
             scalar_dist_df.loc[tmpFile_idx, 'testFilenameEmoLabel'] = label
@@ -448,6 +468,49 @@ class CordioESP_ToolBox:
         return scalar_dist_df
 
         # plot and save methods:
+
+    def append_manipulate_scalar_distance_table(self, patient_dir_url, table, model, sentence, clinicalInformation, fileHandle):
+        patient_column_names = ['testFileIdx', 'testFilename', 'testDate', 'testTime',
+                                       'testClinicalStatus', 'testPhn', 'testPhn2', 'testPhn3', 'testTriphone',
+                                       'testExpectedTriphone', 'testPhnQuality', 'refFileIdx', 'refFilename',
+                                       'refDate', 'refTime', 'refClinicalStatus', 'refPhn', 'refPhn2',
+                                       'refPhn3', 'refTriphone', 'refExpectedTriphone', 'refPhnQuality',
+                                       'sentence', 'relaxationLen', 'phnDtwFrameNum', 'distItar',
+                                       'distItar_longFrame', 'distItpf_300_1500',
+                                       'distItpf_longFrame_300_1500', 'distIsar', 'distIsar_longFrame',
+                                       'distIspf_300_1500', 'distIspf_longFrame_300_1500', 'distChar',
+                                       'distChar_longFrame', 'distChpf_300_1500',
+                                       'distChpf_longFrame_300_1500', 'distLs', 'distLs_longFrame', 'distLpcc',
+                                       'distLpcc_longFrame', 'distMfcc', 'distMfcc_longFrame', 'distPitch',
+                                       'distPitch_RefTestError', 'distPitch_RefTestClipError',
+                                       'distPitch_TestRefError', 'distPitch_TestRefClipError', 'distPitchFix',
+                                       'distPitchFix_RefTestError', 'distPitchFix_RefTestClipError',
+                                       'distPitchFix_TestRefError', 'distPitchFix_TestRefClipError', 'distFF1',
+                                       'distFF1_RefTestError', 'distFF1_RefTestClipError',
+                                       'distFF1_TestRefError', 'distFF1_TestRefClipError', 'distFF2',
+                                       'distFF2_RefTestError', 'distFF2_RefTestClipError',
+                                       'distFF2_TestRefError', 'distFF2_TestRefClipError', 'distPE',
+                                       'testFilenameEmoLabel', 'refFilenameEmoLabel']
+
+        # fix table if needed:
+        if 'Unnamed: 0' in list(table.columns)[0:10]:
+            table = table.drop('Unnamed: 0', axis=1)
+        # check table:
+        if list(table.columns) != patient_column_names:
+            sys.exit('\ngiven table columns format error')
+
+        # filtering new audio files to process:
+        processed_wavs = table["Filename"]
+        all_wav_urls = glob.glob(os.path.join(patient_dir_url, '*.wav'))
+        all_wav_urls = [x for x in all_wav_urls if sentence in x]  # filter wav by sentence
+        wav_url_to_process = [wav_url for wav_url in all_wav_urls if
+                              not self.isValInList(ntpath.basename(wav_url), processed_wavs)]
+        if wav_url_to_process != []:
+            new_table = self.create_ESP_patient_model_sentence_labeled_table(wav_url_to_process, model, sentence,
+                                                                             clinicalInformation, fileHandle)
+            return table.append(new_table)
+        else:
+            return table
     # ---------------------
 
     def patient_plotNsave_emotion_over_time(self, patient_prob_tables_urls, model_list, emotion_list, session_hour_range, setup_name):

@@ -70,11 +70,11 @@ for i, patientID, sentence in zip(range(len(input_df)), input_df["patientID"], i
             if(len(new_table)>len(table)):
                 # if table existed and updated:
                 os.remove(latest_ver_table_urls[-1]) # remove previes table
-                new_table['FileIdx'] = []
-                new_table = table.reset_index()
+                new_table = new_table.drop('FileIdx', 1)
+                new_table = new_table.reset_index(drop=True)
                 new_table.index.name = 'FileIdx'
                 new_table.index = new_table.index + 1
-                ESP_TB.SaveTable(table, save_url_path, save_file_name, add_datetime=True)
+                ESP_TB.SaveTable(new_table, save_url_path, save_file_name, add_datetime=True)
             # if len(new_table)<=len(table) then keep the original table
         else:
             table.index.name = 'FileIdx'
